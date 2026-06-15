@@ -185,8 +185,7 @@ def collect_usage() -> dict:
 
 
 def make_usage_icon(pct: float, size: int = 128) -> QIcon:
-    """Tray icon: large bold % number + thin coloured bar underneath.
-    Rendered at 2× internally so Qt's downscale stays crisp at 22 px."""
+    """Tray icon: horizontal fill bar using full icon height."""
     if pct < 75:
         accent = QColor("#22c55e")
     elif pct < 90:
@@ -194,42 +193,33 @@ def make_usage_icon(pct: float, size: int = 128) -> QIcon:
     else:
         accent = QColor("#ef4444")
 
-    draw_size = size * 2          # render at 2× for crispness
+    draw_size = size * 2
     px = QPixmap(draw_size, draw_size)
     px.fill(Qt.GlobalColor.transparent)
     p = QPainter(px)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-    label = f"{int(pct)}%"
-    font = QFont("monospace", draw_size // 3, QFont.Weight.Bold)
-    p.setFont(font)
-    fm = p.fontMetrics()
-    tw = fm.horizontalAdvance(label)
-    th = fm.ascent()
-    # centre number in upper ~70 % of the icon
-    tx = (draw_size - tw) // 2
-    ty = int(draw_size * 0.62)
-    p.setPen(accent)
-    p.drawText(tx, ty, label)
+    mg = max(2, draw_size // 16)
+    bar_x = mg
+    bar_y = mg
+    bar_w = draw_size - 2 * mg
+    bar_h = draw_size - 2 * mg
+    r = max(3, bar_h // 6)
 
-    # thin bar at the bottom (last 18 %)
-    bar_mg = draw_size // 8
-    bar_h  = max(6, draw_size // 9)
-    bar_y  = draw_size - bar_mg - bar_h
-    bar_w  = draw_size - 2 * bar_mg
-    r      = bar_h // 2
-
-    p.setPen(QPen(QColor("#444444"), 1))
+    p.setPen(QPen(QColor("#555555"), max(1, draw_size // 32)))
     p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawRoundedRect(bar_mg, bar_y, bar_w, bar_h, r, r)
+    p.drawRoundedRect(bar_x, bar_y, bar_w, bar_h, r, r)
 
     fill_w = max(0, int(bar_w * pct / 100))
     if fill_w:
+        border = max(2, draw_size // 32)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(accent)
-        p.setClipRect(bar_mg, bar_y, bar_w, bar_h)
-        p.drawRoundedRect(bar_mg, bar_y, fill_w, bar_h, r, r)
+        p.setClipRect(bar_x + border, bar_y + border,
+                      bar_w - 2 * border, bar_h - 2 * border)
+        p.drawRoundedRect(bar_x + border, bar_y + border,
+                          fill_w - border, bar_h - 2 * border,
+                          max(1, r - border), max(1, r - border))
         p.setClipping(False)
 
     p.end()
