@@ -189,7 +189,7 @@ def make_usage_icon(pct: float, size: int = 128) -> QIcon:
     Rendered at 2× internally so Qt's downscale stays crisp at 22 px."""
     if pct < 75:
         accent = QColor("#22c55e")
-    elif pct < 85:
+    elif pct < 90:
         accent = QColor(ACCENT)
     else:
         accent = QColor("#ef4444")
@@ -298,7 +298,7 @@ class PaceBar(QWidget):
         if fill_w > 0:
             if ratio < 0.75:
                 color = QColor("#22c55e")
-            elif ratio < 0.85:
+            elif ratio < 0.90:
                 color = QColor(ACCENT)
             else:
                 color = QColor("#ef4444")
