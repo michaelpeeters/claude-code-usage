@@ -184,58 +184,58 @@ def collect_usage() -> dict:
     return result
 
 
-def make_usage_icon(pct: float, size: int = 64) -> QIcon:
-    """Horizontal bar gauge with percentage label."""
+def make_usage_icon(pct: float, size: int = 128) -> QIcon:
+    """Tray icon: large bold % number + thin coloured bar underneath.
+    Rendered at 2× internally so Qt's downscale stays crisp at 22 px."""
     if pct < 60:
-        fill_color = QColor("#22c55e")
+        accent = QColor("#22c55e")
     elif pct < 85:
-        fill_color = QColor(ACCENT)
+        accent = QColor(ACCENT)
     else:
-        fill_color = QColor("#ef4444")
-    outline_color = QColor("#888888")
+        accent = QColor("#ef4444")
 
-    px = QPixmap(size, size)
+    draw_size = size * 2          # render at 2× for crispness
+    px = QPixmap(draw_size, draw_size)
     px.fill(Qt.GlobalColor.transparent)
     p = QPainter(px)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-    # percentage label above the bar
     label = f"{int(pct)}%"
-    font = QFont("monospace", max(7, size // 8), QFont.Weight.Bold)
+    font = QFont("monospace", draw_size // 3, QFont.Weight.Bold)
     p.setFont(font)
     fm = p.fontMetrics()
-    text_h = fm.height()
-    text_w = fm.horizontalAdvance(label)
-    text_x = (size - text_w) // 2
-    text_y = max(text_h, size // 4)
-    p.setPen(QColor(FG))
-    p.drawText(text_x, text_y, label)
+    tw = fm.horizontalAdvance(label)
+    th = fm.ascent()
+    # centre number in upper ~70 % of the icon
+    tx = (draw_size - tw) // 2
+    ty = int(draw_size * 0.62)
+    p.setPen(accent)
+    p.drawText(tx, ty, label)
 
-    # horizontal bar below the label
-    mg = max(3, size // 12)
-    bar_y = text_y + max(2, size // 16)
-    bar_h = max(8, (size - bar_y - mg) * 2 // 3)
-    bar_x = mg
-    bar_w = size - 2 * mg
-    r = max(2, bar_h // 3)
+    # thin bar at the bottom (last 18 %)
+    bar_mg = draw_size // 8
+    bar_h  = max(6, draw_size // 9)
+    bar_y  = draw_size - bar_mg - bar_h
+    bar_w  = draw_size - 2 * bar_mg
+    r      = bar_h // 2
 
-    p.setPen(QPen(outline_color, max(1, size // 24)))
+    p.setPen(QPen(QColor("#444444"), 1))
     p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawRoundedRect(bar_x, bar_y, bar_w, bar_h, r, r)
+    p.drawRoundedRect(bar_mg, bar_y, bar_w, bar_h, r, r)
 
-    border = max(1, size // 32)
-    max_fill = bar_w - 2 * border
-    fill_w = max(0, int(max_fill * pct / 100))
-    if fill_w > 0:
+    fill_w = max(0, int(bar_w * pct / 100))
+    if fill_w:
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(fill_color)
-        p.setClipRect(bar_x + border, bar_y + border, max_fill, bar_h - 2 * border)
-        p.drawRoundedRect(bar_x + border, bar_y + border, fill_w, bar_h - 2 * border,
-                          max(1, r - border), max(1, r - border))
+        p.setBrush(accent)
+        p.setClipRect(bar_mg, bar_y, bar_w, bar_h)
+        p.drawRoundedRect(bar_mg, bar_y, fill_w, bar_h, r, r)
         p.setClipping(False)
 
     p.end()
-    return QIcon(px)
+    return QIcon(px.scaled(size, size,
+                           Qt.AspectRatioMode.KeepAspectRatio,
+                           Qt.TransformationMode.SmoothTransformation))
 
 
 class MiniBarChart(QWidget):
