@@ -1,4 +1,4 @@
-# claude-code-usage
+# <img src="packaging/claude-usage.png" width="32" align="center"> claude-code-usage
 
 > **Unofficial tool — not made by, affiliated with, or endorsed by Anthropic.**  
 > "Claude" and the Claude logo are trademarks of Anthropic, PBC.
