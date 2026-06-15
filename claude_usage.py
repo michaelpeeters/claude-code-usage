@@ -199,14 +199,15 @@ def make_usage_icon(pct: float, size: int = 128) -> QIcon:
     p = QPainter(px)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    mg = max(2, draw_size // 16)
-    bar_x = mg
-    bar_y = mg
-    bar_w = draw_size - 2 * mg
-    bar_h = draw_size - 2 * mg
+    h_mg = max(2, draw_size // 16)   # horizontal margin
+    v_mg = max(6, draw_size // 5)    # vertical margin — centres + shrinks bar
+    bar_x = h_mg
+    bar_y = v_mg
+    bar_w = draw_size - 2 * h_mg
+    bar_h = draw_size - 2 * v_mg
     r = max(3, bar_h // 6)
 
-    p.setPen(QPen(QColor("#555555"), max(1, draw_size // 32)))
+    p.setPen(QPen(QColor("#555555"), max(1, draw_size // 48)))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawRoundedRect(bar_x, bar_y, bar_w, bar_h, r, r)
 
