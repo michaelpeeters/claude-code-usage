@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.pyc
+
+# Claude Code credentials — never commit these
+# ~/.claude/.credentials.json
+
+.pytest_cache/
+.coverage
+htmlcov/
