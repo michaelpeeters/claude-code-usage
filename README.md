@@ -127,9 +127,13 @@ CI runs on Linux (Python 3.10 – 3.13), macOS, and Windows via GitHub Actions.
 
 ### Packaging
 
-**AppImage (Linux) / macOS app / Windows exe** are built automatically when a `v*` tag is pushed, via [`.github/workflows/release.yml`](.github/workflows/release.yml). Download from the [Releases](https://github.com/michaelpeeters/claude-code-usage/releases) page.
+**AppImage (Linux) / macOS app / Windows exe** are released automatically on every merge to `main` (once CI passes), via [`.github/workflows/release.yml`](.github/workflows/release.yml). Download from the [Releases](https://github.com/michaelpeeters/claude-code-usage/releases) page.
 
 **Flatpak** — a manifest is in [`packaging/com.github.michaelpeeters.ClaudeUsage.yml`](packaging/com.github.michaelpeeters.ClaudeUsage.yml). Not yet published to Flathub; PRs welcome.
+
+### Contributing
+
+`main` is protected — all changes go through a pull request. The `CI gate` check (Linux 3.10–3.13, macOS, Windows) must be green before a PR can be merged. A new release is created automatically after each successful merge.
 
 ---
 
