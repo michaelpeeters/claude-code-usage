@@ -32,11 +32,17 @@ cd claude-code-usage
 ./install.sh
 ```
 
-**Update / uninstall:**
+Re-run anytime to update. On Linux the installer also extracts the app icon and registers it with the hicolor icon theme so it appears correctly in your launcher.
 
 ```bash
-./install.sh           # re-run anytime — updates if a newer release is available
 ./install.sh --uninstall
+```
+
+### Manjaro / Arch (AUR)
+
+```bash
+yay -S claude-code-usage        # stable release
+yay -S claude-code-usage-git    # latest git HEAD
 ```
 
 ### Windows
@@ -48,8 +54,7 @@ powershell -ExecutionPolicy Bypass -c "iwr https://raw.githubusercontent.com/mic
 Or download and run manually:
 
 ```powershell
-.\install.ps1           # install
-.\install.ps1 -Update   # update
+.\install.ps1           # install / update
 .\install.ps1 -Uninstall
 ```
 
@@ -61,8 +66,8 @@ The installer downloads the pre-built `.exe` from the [latest release](https://g
 
 | Platform | Status | Notes |
 |---|---|---|
-| Linux (X11) | ✅ Full | AppImage, system tray, always-on-top |
-| Linux (Wayland) | ✅ Works | See [Wayland notes](#wayland) below |
+| Linux (X11) | ✅ Full | AppImage, system tray, always-on-top pin |
+| Linux (Wayland) | ✅ Works | Tray works on KDE; pin button hidden (not supported) |
 | macOS | ✅ Full | Native tray, `.app` bundle via installer |
 | Windows | ✅ Full | Native tray, `.exe` via installer |
 
@@ -86,7 +91,7 @@ QT_QPA_PLATFORM=xcb    claude-usage   # force X11 / XWayland
 ```
 
 **Known limitations:**
-- **Always-on-top (Pin)** — silently ignored on most Wayland compositors; the app still works.
+- **Pin button** — hidden on Wayland; `WindowStaysOnTopHint` is not supported by most compositors.
 - **System tray** — requires a StatusNotifierItem panel. Works on KDE Plasma; on GNOME install the [AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/). The app detects unavailability automatically and skips the tray icon.
 
 ---
@@ -111,29 +116,30 @@ claude-usage
 Or without the installer:
 
 ```bash
-pip install PyQt6        # or: python -m venv .venv && source .venv/bin/activate && pip install PyQt6
+pip install PyQt6
 python claude_usage.py
 ```
 
-### Tests
+### Tests and linting
 
 ```bash
-pip install pytest
-pytest                             # local
+pip install pytest ruff mypy PyQt6
+pytest                             # unit tests
 QT_QPA_PLATFORM=offscreen pytest   # headless (same as CI)
+ruff check claude_usage.py tests/  # lint
+ruff format --check claude_usage.py tests/
+mypy claude_usage.py               # type check
 ```
 
-CI runs on Linux (Python 3.10 – 3.13), macOS, and Windows via GitHub Actions.
+CI runs lint + type checks + tests on Linux (Python 3.10–3.13), macOS, and Windows. CodeQL SAST runs on every PR and weekly.
 
 ### Packaging
 
-**AppImage (Linux) / macOS app / Windows exe** are released automatically on every merge to `main` (once CI passes), via [`.github/workflows/release.yml`](.github/workflows/release.yml). Download from the [Releases](https://github.com/michaelpeeters/claude-code-usage/releases) page.
-
-**Flatpak** — a manifest is in [`packaging/com.github.michaelpeeters.ClaudeUsage.yml`](packaging/com.github.michaelpeeters.ClaudeUsage.yml). Not yet published to Flathub; PRs welcome.
+Binaries (AppImage / macOS app / Windows exe) are built and released automatically on every merge to `main`. Download from the [Releases](https://github.com/michaelpeeters/claude-code-usage/releases) page.
 
 ### Contributing
 
-`main` is protected — all changes go through a pull request. The `CI gate` check (Linux 3.10–3.13, macOS, Windows) must be green before a PR can be merged. A new release is created automatically after each successful merge.
+`main` is protected — all changes go through a pull request. The `CI gate` check must be green before merging. A new release is created automatically after each successful merge.
 
 ---
 
