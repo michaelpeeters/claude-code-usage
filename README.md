@@ -1,5 +1,8 @@
 # claude-code-usage
 
+> **Unofficial tool — not made by, affiliated with, or endorsed by Anthropic.**  
+> "Claude" and the Claude logo are trademarks of Anthropic, PBC.
+
 A lightweight PyQt6 desktop widget that shows your [Claude Code](https://claude.ai/code) token consumption at a glance — no API key required. Reads the local `~/.claude/` data written by the CLI.
 
 ![screenshot](screenshot.png)
@@ -10,13 +13,6 @@ A lightweight PyQt6 desktop widget that shows your [Claude Code](https://claude.
 - 7-day bar chart and totals
 - Per-model token breakdown (Sonnet / Opus / Haiku)
 - Real rate-limit percentages when the Claude Code statusline script is running
-
----
-
-## Trademark notice
-
-"Claude" and the Claude logo are trademarks of Anthropic, PBC.  
-This project is independent and unofficial — not affiliated with, endorsed by, or sponsored by Anthropic.
 
 ---
 

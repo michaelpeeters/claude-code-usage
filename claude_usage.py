@@ -297,7 +297,7 @@ class PaceBar(QWidget):
 class UsageWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Claude Usage")
+        self.setWindowTitle("Claude Usage (unofficial)")
         self.setMinimumWidth(280)
         self.always_on_top = True
         self._apply_flags()
@@ -305,7 +305,7 @@ class UsageWindow(QWidget):
         self._tray = None
         if QSystemTrayIcon.isSystemTrayAvailable():
             self._tray = QSystemTrayIcon(self)
-            self._tray.setToolTip("Claude Usage")
+            self._tray.setToolTip("Claude Usage · unofficial tool, not by Anthropic")
             self._tray.activated.connect(self._tray_clicked)
             self._tray.show()
         self.refresh()
@@ -369,6 +369,10 @@ class UsageWindow(QWidget):
         refresh_btn.clicked.connect(self.refresh)
         hdr.addWidget(refresh_btn)
         root.addLayout(hdr)
+
+        disclaimer = QLabel("Unofficial · not by Anthropic")
+        disclaimer.setStyleSheet("color: #555; font-size: 9px;")
+        root.addWidget(disclaimer)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
