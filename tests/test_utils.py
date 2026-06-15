@@ -1,9 +1,8 @@
 """Unit tests for pure utility functions in claude_usage."""
 
 import json
-import sys
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,23 +12,26 @@ import pytest
 # PyQt6 is imported at module level in claude_usage, so we need to satisfy it.
 os.environ.setdefault("DISPLAY", ":99")  # headless-safe fallback
 
-from claude_usage import fmt_tokens, collect_usage, collect_5h_window
-
+from claude_usage import collect_5h_window, collect_usage, fmt_tokens
 
 # ---------------------------------------------------------------------------
 # fmt_tokens
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("n, expected", [
-    (0, "0"),
-    (999, "999"),
-    (1_000, "1K"),
-    (42_500, "42K"),  # :.0f truncates, not rounds
-    (999_999, "1000K"),
-    (1_000_000, "1.0M"),
-    (1_500_000, "1.5M"),
-    (10_000_000, "10.0M"),
-])
+
+@pytest.mark.parametrize(
+    "n, expected",
+    [
+        (0, "0"),
+        (999, "999"),
+        (1_000, "1K"),
+        (42_500, "42K"),  # :.0f truncates, not rounds
+        (999_999, "1000K"),
+        (1_000_000, "1.0M"),
+        (1_500_000, "1.5M"),
+        (10_000_000, "10.0M"),
+    ],
+)
 def test_fmt_tokens(n, expected):
     assert fmt_tokens(n) == expected
 
@@ -37,6 +39,7 @@ def test_fmt_tokens(n, expected):
 # ---------------------------------------------------------------------------
 # collect_5h_window
 # ---------------------------------------------------------------------------
+
 
 def _write_jsonl(path: Path, entries: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -66,10 +69,13 @@ def test_collect_5h_window_counts_recent(tmp_path):
     old = now - timedelta(hours=6)
 
     jsonl = tmp_path / "proj" / "chat.jsonl"
-    _write_jsonl(jsonl, [
-        _assistant_entry(recent, 100, 50),   # within 5h -> counted
-        _assistant_entry(old, 9999, 9999),   # outside 5h -> ignored
-    ])
+    _write_jsonl(
+        jsonl,
+        [
+            _assistant_entry(recent, 100, 50),  # within 5h -> counted
+            _assistant_entry(old, 9999, 9999),  # outside 5h -> ignored
+        ],
+    )
 
     with patch("claude_usage.PROJECTS_DIR", tmp_path):
         total = collect_5h_window()
@@ -85,9 +91,16 @@ def test_collect_5h_window_empty(tmp_path):
 def test_collect_5h_window_skips_non_assistant(tmp_path):
     now = datetime.now(timezone.utc)
     jsonl = tmp_path / "p" / "f.jsonl"
-    _write_jsonl(jsonl, [
-        {"type": "human", "timestamp": now.isoformat(), "message": {"usage": {"input_tokens": 500}}},
-    ])
+    _write_jsonl(
+        jsonl,
+        [
+            {
+                "type": "human",
+                "timestamp": now.isoformat(),
+                "message": {"usage": {"input_tokens": 500}},
+            },
+        ],
+    )
     with patch("claude_usage.PROJECTS_DIR", tmp_path):
         assert collect_5h_window() == 0
 
@@ -96,24 +109,30 @@ def test_collect_5h_window_skips_non_assistant(tmp_path):
 # collect_usage
 # ---------------------------------------------------------------------------
 
+
 def test_collect_usage_today_live(tmp_path):
     """Live JSONL entries for today are aggregated correctly."""
     today = datetime.now(timezone.utc)
     jsonl = tmp_path / "proj" / "s.jsonl"
-    _write_jsonl(jsonl, [
-        _assistant_entry(today, 200, 100, session_id="sess-a"),
-        _assistant_entry(today, 300, 150, session_id="sess-b"),
-    ])
+    _write_jsonl(
+        jsonl,
+        [
+            _assistant_entry(today, 200, 100, session_id="sess-a"),
+            _assistant_entry(today, 300, 150, session_id="sess-b"),
+        ],
+    )
 
-    with patch("claude_usage.PROJECTS_DIR", tmp_path), \
-         patch("claude_usage.STATS_CACHE", tmp_path / "nonexistent.json"):
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "nonexistent.json"),
+    ):
         daily = collect_usage()
 
     date_str = today.strftime("%Y-%m-%d")
     assert date_str in daily
     d = daily[date_str]
     assert d["messages"] == 2
-    assert d["tokens"] == 750   # (200+100) + (300+150)
+    assert d["tokens"] == 750  # (200+100) + (300+150)
     assert d["sessions"] == 2
 
 
@@ -133,8 +152,10 @@ def test_collect_usage_ignores_placeholder_models(tmp_path):
     jsonl.parent.mkdir(parents=True)
     jsonl.write_text(json.dumps(entry) + "\n")
 
-    with patch("claude_usage.PROJECTS_DIR", tmp_path), \
-         patch("claude_usage.STATS_CACHE", tmp_path / "nonexistent.json"):
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "nonexistent.json"),
+    ):
         daily = collect_usage()
 
     date_str = today.strftime("%Y-%m-%d")
@@ -146,15 +167,22 @@ def test_collect_usage_cache_seeds_older_days(tmp_path):
     cache = {
         "lastComputedDate": "2026-06-14",
         "dailyActivity": [
-            {"date": "2026-06-10", "messageCount": 50, "toolCallCount": 10, "sessionCount": 3},
+            {
+                "date": "2026-06-10",
+                "messageCount": 50,
+                "toolCallCount": 10,
+                "sessionCount": 3,
+            },
         ],
         "dailyModelTokens": [],
     }
     cache_file = tmp_path / "stats-cache.json"
     cache_file.write_text(json.dumps(cache))
 
-    with patch("claude_usage.PROJECTS_DIR", tmp_path), \
-         patch("claude_usage.STATS_CACHE", cache_file):
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", cache_file),
+    ):
         daily = collect_usage()
 
     assert daily["2026-06-10"]["messages"] == 50

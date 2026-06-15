@@ -2,7 +2,6 @@
 """Claude Code usage monitor — reads local ~/.claude data, no API needed."""
 
 import json
-import os
 import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -27,7 +26,7 @@ STATS_CACHE = CLAUDE_DIR / "stats-cache.json"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
 RATE_LIMITS_CACHE = CLAUDE_DIR / "rate-limits-cache.json"
 
-ACCENT = "#d97706"        # amber
+ACCENT = "#d97706"  # amber
 BG = "#1a1a1a"
 BG2 = "#242424"
 FG = "#e5e5e5"
@@ -51,9 +50,9 @@ MODEL_SHORT = {
 
 def fmt_tokens(n: int) -> str:
     if n >= 1_000_000:
-        return f"{n/1_000_000:.1f}M"
+        return f"{n / 1_000_000:.1f}M"
     if n >= 1_000:
-        return f"{n/1_000:.0f}K"
+        return f"{n / 1_000:.0f}K"
     return str(n)
 
 
@@ -97,11 +96,18 @@ def collect_5h_window() -> int:
 
 def collect_usage() -> dict:
     """Aggregate usage from stats-cache and live project JSONL files."""
-    daily: dict[str, dict] = defaultdict(lambda: {
-        "messages": 0, "sessions": set(), "tools": 0,
-        "input": 0, "output": 0, "cache_read": 0, "cache_create": 0,
-        "models": defaultdict(int),
-    })
+    daily: dict[str, dict] = defaultdict(
+        lambda: {
+            "messages": 0,
+            "sessions": set(),
+            "tools": 0,
+            "input": 0,
+            "output": 0,
+            "cache_read": 0,
+            "cache_create": 0,
+            "models": defaultdict(int),
+        }
+    )
 
     # Seed from stats-cache (fast, but may lag)
     cache_cutoff = ""
@@ -162,7 +168,10 @@ def collect_usage() -> dict:
                     raw_model = msg.get("model", "")
                     if not raw_model or raw_model.startswith("<"):
                         continue
-                    model = MODEL_SHORT.get(raw_model, raw_model.split("-")[1] if "-" in raw_model else raw_model)
+                    model = MODEL_SHORT.get(
+                        raw_model,
+                        raw_model.split("-")[1] if "-" in raw_model else raw_model,
+                    )
                     daily[d]["models"][model] += inp + out
         except Exception:
             continue
@@ -199,8 +208,8 @@ def make_usage_icon(pct: float, size: int = 128) -> QIcon:
     p = QPainter(px)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    h_mg = max(2, draw_size // 16)   # horizontal margin
-    v_mg = max(6, draw_size // 5)    # vertical margin — centres + shrinks bar
+    h_mg = max(2, draw_size // 16)  # horizontal margin
+    v_mg = max(6, draw_size // 5)  # vertical margin — centres + shrinks bar
     bar_x = h_mg
     bar_y = v_mg
     bar_w = draw_size - 2 * h_mg
@@ -216,17 +225,26 @@ def make_usage_icon(pct: float, size: int = 128) -> QIcon:
         border = max(2, draw_size // 32)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(accent)
-        p.setClipRect(bar_x + border, bar_y + border,
-                      bar_w - 2 * border, bar_h - 2 * border)
-        p.drawRoundedRect(bar_x + border, bar_y + border,
-                          fill_w - border, bar_h - 2 * border,
-                          max(1, r - border), max(1, r - border))
+        p.setClipRect(bar_x + border, bar_y + border, bar_w - 2 * border, bar_h - 2 * border)
+        p.drawRoundedRect(
+            bar_x + border,
+            bar_y + border,
+            fill_w - border,
+            bar_h - 2 * border,
+            max(1, r - border),
+            max(1, r - border),
+        )
         p.setClipping(False)
 
     p.end()
-    return QIcon(px.scaled(size, size,
-                           Qt.AspectRatioMode.KeepAspectRatio,
-                           Qt.TransformationMode.SmoothTransformation))
+    return QIcon(
+        px.scaled(
+            size,
+            size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+    )
 
 
 class MiniBarChart(QWidget):
@@ -267,6 +285,7 @@ class MiniBarChart(QWidget):
 
 class PaceBar(QWidget):
     """Horizontal progress bar for the 5-hour rolling token window."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._value = 0
@@ -327,12 +346,17 @@ class UsageWindow(QWidget):
             self.setVisible(not self.isVisible())
 
     def _apply_flags(self):
-        flags = Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint if self.always_on_top else Qt.WindowType.Window
+        flags = (
+            Qt.WindowType.Window | Qt.WindowType.WindowStaysOnTopHint
+            if self.always_on_top
+            else Qt.WindowType.Window
+        )
         self.setWindowFlags(flags)
 
     def _build_ui(self):
         self.setStyleSheet(f"""
-            QWidget {{ background: {BG}; color: {FG}; font-family: 'Noto Sans', sans-serif; font-size: 12px; }}
+            QWidget {{ background: {BG}; color: {FG};
+                       font-family: 'Noto Sans', sans-serif; font-size: 12px; }}
             QLabel {{ background: transparent; }}
             QPushButton {{
                 background: {BG2}; color: {FG2}; border: 1px solid #333;
@@ -379,12 +403,14 @@ class UsageWindow(QWidget):
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"color: #333;")
+        sep.setStyleSheet("color: #333;")
         root.addWidget(sep)
 
         # ── today ────────────────────────────────────────────────────────
         self.today_label = QLabel("TODAY")
-        self.today_label.setStyleSheet(f"color: {FG2}; font-size: 10px; font-weight: bold; letter-spacing: 1px;")
+        self.today_label.setStyleSheet(
+            f"color: {FG2}; font-size: 10px; font-weight: bold; letter-spacing: 1px;"
+        )
         root.addWidget(self.today_label)
 
         grid = QHBoxLayout()
@@ -457,7 +483,7 @@ class UsageWindow(QWidget):
 
         # ── footer ───────────────────────────────────────────────────────
         self.updated_label = QLabel()
-        self.updated_label.setStyleSheet(f"color: #555; font-size: 10px;")
+        self.updated_label.setStyleSheet("color: #555; font-size: 10px;")
         self.updated_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         root.addWidget(self.updated_label)
 
@@ -570,8 +596,10 @@ class UsageWindow(QWidget):
         # model breakdown
         while self.model_box.count():
             item = self.model_box.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            if item is not None:
+                w = item.widget()
+                if w is not None:
+                    w.deleteLater()
         for model, toks in sorted(week_models.items(), key=lambda x: -x[1]):
             row = QHBoxLayout()
             lbl = QLabel(model)
