@@ -185,7 +185,7 @@ def collect_usage() -> dict:
 
 
 def make_usage_icon(pct: float, size: int = 64) -> QIcon:
-    """Battery-style usage gauge icon. Fill = how much of the limit is consumed."""
+    """Vertical bar gauge icon — fills bottom-to-top to show consumption."""
     if pct < 60:
         fill_color = QColor("#22c55e")
     elif pct < 85:
@@ -199,27 +199,27 @@ def make_usage_icon(pct: float, size: int = 64) -> QIcon:
     p = QPainter(px)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    mg = max(4, size // 10)
-    body_w = size - 2 * mg
-    body_h = max(12, size // 3)
-    body_x = mg
-    body_y = (size - body_h) // 2
-    r = max(2, size // 10)
+    mg = max(3, size // 10)
+    bar_w = max(10, size // 3)
+    bar_h = size - 2 * mg
+    bar_x = (size - bar_w) // 2
+    bar_y = mg
+    r = max(2, bar_w // 4)
+    pen_w = max(1, size // 24)
 
-    # outline
-    p.setPen(QPen(outline_color, max(1, size // 24)))
+    p.setPen(QPen(outline_color, pen_w))
     p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawRoundedRect(body_x, body_y, body_w, body_h, r, r)
+    p.drawRoundedRect(bar_x, bar_y, bar_w, bar_h, r, r)
 
-    # fill
-    border = max(2, size // 22)
-    max_fill = body_w - 2 * border
-    fill_w = max(0, int(max_fill * pct / 100))
-    if fill_w > 0:
+    border = pen_w + max(1, size // 32)
+    inner_h = bar_h - 2 * border
+    fill_h = max(0, int(inner_h * pct / 100))
+    if fill_h > 0:
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(fill_color)
-        p.setClipRect(body_x + border, body_y + border, fill_w, body_h - 2 * border)
-        p.drawRoundedRect(body_x + border, body_y + border, fill_w, body_h - 2 * border, max(1, r - border), max(1, r - border))
+        fill_y = bar_y + border + (inner_h - fill_h)
+        p.setClipRect(bar_x + border, bar_y + border, bar_w - 2 * border, inner_h)
+        p.drawRoundedRect(bar_x + border, fill_y, bar_w - 2 * border, fill_h, max(1, r - border), max(1, r - border))
         p.setClipping(False)
 
     p.end()

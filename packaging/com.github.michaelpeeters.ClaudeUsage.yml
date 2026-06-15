@@ -1,0 +1,56 @@
+# Flatpak manifest — build with:
+#   flatpak-builder --install --user build-dir packaging/com.github.michaelpeeters.ClaudeUsage.yml
+#
+# Prerequisites:
+#   flatpak install flathub org.kde.Platform//6.9 org.kde.Sdk//6.9
+
+app-id: com.github.michaelpeeters.ClaudeUsage
+runtime: org.kde.Platform
+runtime-version: "6.9"
+sdk: org.kde.Sdk
+
+# Python 3.12 extension from freedesktop SDK
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.python312
+
+build-options:
+  append-path: /usr/lib/sdk/python312/bin
+  env:
+    PYTHON: python3.12
+    PIP_PREFIX: /app
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+command: claude-usage
+
+finish-args:
+  # Display
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  # Tray icon (StatusNotifierItem on Wayland)
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
+  # Read-only access to Claude Code data directory
+  - --filesystem=home/.claude:ro
+
+modules:
+  - name: python3-PyQt6
+    buildsystem: simple
+    build-commands:
+      - pip3 install --no-build-isolation --prefix=/app PyQt6
+    sources:
+      - type: shell
+        commands:
+          - pip3 download --no-deps --dest=. PyQt6 PyQt6-Qt6 PyQt6-sip
+    # NOTE: pin exact versions and add sha256 checksums for reproducible builds
+
+  - name: claude-usage
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 claude_usage.py /app/bin/claude_usage.py
+      - install -Dm755 packaging/claude-usage-wrapper.sh /app/bin/claude-usage
+      - install -Dm644 packaging/claude-usage.desktop
+          /app/share/applications/com.github.michaelpeeters.ClaudeUsage.desktop
+    sources:
+      - type: dir
+        path: ..
