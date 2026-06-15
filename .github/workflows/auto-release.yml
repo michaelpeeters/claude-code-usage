@@ -8,10 +8,11 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   release:
-    name: Bump patch and tag
+    name: Bump patch and release
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success'
     steps:
@@ -20,6 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: Bump patch version and push tag
+        id: version
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -35,3 +37,10 @@ jobs:
           echo "Tagging $new"
           git tag "$new"
           git push origin "$new"
+          echo "tag=$new" >> $GITHUB_OUTPUT
+
+      - name: Dispatch release build
+        run: |
+          gh workflow run release.yml --field tag=${{ steps.version.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}

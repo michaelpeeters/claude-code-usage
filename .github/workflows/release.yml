@@ -4,9 +4,18 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.1.5)"
+        required: true
 
 permissions:
   contents: write
+
+env:
+  # Works for both tag pushes and workflow_dispatch
+  REL_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
   # ── Linux AppImage ────────────────────────────────────────────────────────
@@ -15,6 +24,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: actions/setup-python@v6
         with:
@@ -69,8 +80,8 @@ jobs:
       - name: Create AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          VERSION: ${{ github.ref_name }}
-        run: ./appimagetool AppDir claude-usage-${{ github.ref_name }}-x86_64.AppImage
+          VERSION: ${{ env.REL_TAG }}
+        run: ./appimagetool AppDir claude-usage-${{ env.REL_TAG }}-x86_64.AppImage
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
@@ -84,6 +95,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -95,7 +108,7 @@ jobs:
             --icon packaging/claude-usage.png \
             claude_usage.py
           ditto -c -k --keepParent "dist/Claude Usage.app" \
-            "claude-usage-${{ github.ref_name }}-macos.zip"
+            "claude-usage-${{ env.REL_TAG }}-macos.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: claude-usage-macos
@@ -107,6 +120,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -132,6 +147,7 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.REL_TAG }}
           generate_release_notes: true
           files: |
             *.AppImage

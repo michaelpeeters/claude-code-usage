@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
+from PyQt6.QtGui import QColor, QFont, QGuiApplication, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -382,7 +382,9 @@ class UsageWindow(QWidget):
         self.pin_btn.setCheckable(True)
         self.pin_btn.setChecked(True)
         self.pin_btn.clicked.connect(self._toggle_pin)
-        hdr.addWidget(self.pin_btn)
+        # WindowStaysOnTopHint is ignored on Wayland; hide the button there
+        if QGuiApplication.platformName() != "wayland":
+            hdr.addWidget(self.pin_btn)
 
         self.auto_btn = QPushButton("↺ 5m")
         self.auto_btn.setCheckable(True)
