@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # install.sh — install or update claude-code-usage from GitHub releases
 # Usage:
-#   ./install.sh              install latest release
-#   ./install.sh --update     update to latest release
+#   ./install.sh              install, or update if already installed
 #   ./install.sh --uninstall  remove everything
 #   ./install.sh --source     install from local source (dev / no release yet)
 set -euo pipefail
@@ -101,13 +100,13 @@ LATEST_TAG=$(printf '%s' "$RELEASE_JSON" | grep '"tag_name"' | head -1 | sed 's/
 CURRENT_TAG=""
 [[ -f "$VERSION_FILE" ]] && CURRENT_TAG=$(cat "$VERSION_FILE")
 
-if [[ "${1:-}" == "--update" ]] && [[ "$CURRENT_TAG" == "$LATEST_TAG" ]]; then
+if [[ -n "$CURRENT_TAG" ]] && [[ "$CURRENT_TAG" == "$LATEST_TAG" ]]; then
     green "Already up to date ($LATEST_TAG)."
     exit 0
 fi
 
 info "Latest release : $LATEST_TAG"
-[[ -n "$CURRENT_TAG" ]] && info "Installed       : $CURRENT_TAG"
+[[ -n "$CURRENT_TAG" ]] && info "Installed       : $CURRENT_TAG" || info "Fresh install"
 
 # ── pick the right asset ──────────────────────────────────────────────────
 
@@ -209,5 +208,5 @@ elif [[ "$PLATFORM" == "macos" ]]; then
     printf '\n  Terminal : claude-usage  (or open -a "Claude Usage")\n'
     printf '  Launcher : ~/Applications/Claude Usage.app\n'
 fi
-printf '  Update   : ./install.sh --update\n'
+printf '  Update   : ./install.sh\n'
 printf '  Remove   : ./install.sh --uninstall\n\n'

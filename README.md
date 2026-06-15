@@ -35,7 +35,7 @@ cd claude-code-usage
 **Update / uninstall:**
 
 ```bash
-./install.sh --update
+./install.sh           # re-run anytime — updates if a newer release is available
 ./install.sh --uninstall
 ```
 
