@@ -40,11 +40,13 @@ jobs:
 
       - name: Assemble AppDir
         run: |
-          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/applications \
+                   AppDir/usr/share/icons/hicolor/256x256/apps
           cp -r dist/claude-usage/* AppDir/
           cp packaging/claude-usage.desktop AppDir/claude-usage.desktop
           cp packaging/claude-usage.desktop AppDir/usr/share/applications/
-          # Minimal AppRun wrapper
+          cp packaging/claude-usage.png AppDir/claude-usage.png
+          cp packaging/claude-usage.png AppDir/usr/share/icons/hicolor/256x256/apps/claude-usage.png
           cat > AppDir/AppRun <<'EOF'
           #!/bin/sh
           SELF=$(readlink -f "$0")
@@ -84,8 +86,11 @@ jobs:
         run: pip install PyInstaller PyQt6
       - name: Bundle
         run: |
-          pyinstaller --onefile --windowed --name "Claude Usage" claude_usage.py
-          cd dist && zip -r ../claude-usage-${{ github.ref_name }}-macos.zip "Claude Usage.app"
+          pyinstaller --windowed --name "Claude Usage" \
+            --icon packaging/claude-usage.png \
+            claude_usage.py
+          ditto -c -k --keepParent "dist/Claude Usage.app" \
+            "claude-usage-${{ github.ref_name }}-macos.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: claude-usage-macos
@@ -103,7 +108,7 @@ jobs:
       - name: Install PyInstaller + app deps
         run: pip install PyInstaller PyQt6
       - name: Bundle
-        run: pyinstaller --onefile --windowed --name claude-usage claude_usage.py
+        run: pyinstaller --onefile --windowed --name claude-usage --icon packaging/claude-usage.png claude_usage.py
       - uses: actions/upload-artifact@v4
         with:
           name: claude-usage-windows
