@@ -83,7 +83,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install PyInstaller + app deps
-        run: pip install PyInstaller PyQt6
+        run: pip install PyInstaller PyQt6 Pillow
       - name: Bundle
         run: |
           pyinstaller --windowed --name "Claude Usage" \
@@ -106,7 +106,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install PyInstaller + app deps
-        run: pip install PyInstaller PyQt6
+        run: pip install PyInstaller PyQt6 Pillow
       - name: Bundle
         run: pyinstaller --onefile --windowed --name claude-usage --icon packaging/claude-usage.png claude_usage.py
       - uses: actions/upload-artifact@v4
