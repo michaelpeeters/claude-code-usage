@@ -1,0 +1,41 @@
+pkgname=claude-code-usage-git
+pkgver=r0.g0000000
+pkgrel=1
+pkgdesc="Unofficial desktop widget for monitoring Claude Code token usage — git HEAD (not by Anthropic)"
+arch=('any')
+url="https://github.com/michaelpeeters/claude-code-usage"
+license=('MIT')
+depends=('python' 'python-pyqt6')
+makedepends=('git')
+provides=('claude-code-usage')
+conflicts=('claude-code-usage')
+source=("git+https://github.com/michaelpeeters/claude-code-usage.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd claude-code-usage
+    printf "r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+package() {
+    cd claude-code-usage
+
+    install -Dm644 claude_usage.py \
+        "${pkgdir}/usr/lib/claude-code-usage/claude_usage.py"
+
+    install -dm755 "${pkgdir}/usr/bin"
+    cat > "${pkgdir}/usr/bin/claude-usage" <<EOF
+#!/bin/sh
+exec python /usr/lib/claude-code-usage/claude_usage.py "\$@"
+EOF
+    chmod 755 "${pkgdir}/usr/bin/claude-usage"
+
+    install -Dm644 packaging/claude-usage.desktop \
+        "${pkgdir}/usr/share/applications/claude-usage.desktop"
+
+    install -Dm644 packaging/claude-usage.png \
+        "${pkgdir}/usr/share/icons/hicolor/256x256/apps/claude-usage.png"
+
+    install -Dm644 LICENSE \
+        "${pkgdir}/usr/share/licenses/claude-code-usage/LICENSE"
+}

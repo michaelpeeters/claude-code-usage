@@ -1,0 +1,38 @@
+pkgname=claude-code-usage
+pkgver=0.1.1
+pkgrel=1
+pkgdesc="Unofficial desktop widget for monitoring Claude Code token usage (not by Anthropic)"
+arch=('any')
+url="https://github.com/michaelpeeters/claude-code-usage"
+license=('MIT')
+depends=('python' 'python-pyqt6')
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/michaelpeeters/${pkgname}/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('41d24d3e8a13fe080dae98725aaaf0e5d74d16fd933eb2c3e7afd65f0aae8143')
+
+package() {
+    cd "${pkgname}-${pkgver}"
+
+    # script
+    install -Dm644 claude_usage.py \
+        "${pkgdir}/usr/lib/${pkgname}/claude_usage.py"
+
+    # launcher wrapper
+    install -dm755 "${pkgdir}/usr/bin"
+    cat > "${pkgdir}/usr/bin/claude-usage" <<EOF
+#!/bin/sh
+exec python /usr/lib/${pkgname}/claude_usage.py "\$@"
+EOF
+    chmod 755 "${pkgdir}/usr/bin/claude-usage"
+
+    # desktop entry
+    install -Dm644 packaging/claude-usage.desktop \
+        "${pkgdir}/usr/share/applications/claude-usage.desktop"
+
+    # icon
+    install -Dm644 packaging/claude-usage.png \
+        "${pkgdir}/usr/share/icons/hicolor/256x256/apps/claude-usage.png"
+
+    # licence
+    install -Dm644 LICENSE \
+        "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
