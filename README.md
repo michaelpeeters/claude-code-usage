@@ -27,58 +27,85 @@ A lightweight PyQt6 desktop widget that shows your [Claude Code](https://claude.
 
 ---
 
-## Requirements
+## Data path
 
-- Python 3.10+
-- [Claude Code CLI](https://claude.ai/code) installed and used at least once
+Claude Code stores its data in a `.claude` folder inside your home directory:
 
-```
-pip install PyQt6
-```
+| OS | Path |
+|---|---|
+| Linux | `~/.claude/` → `/home/you/.claude/` |
+| macOS | `~/.claude/` → `/Users/you/.claude/` |
+| Windows | `~\.claude\` → `C:\Users\you\.claude\` |
+
+The app uses Python's `Path.home() / ".claude"` which resolves correctly on all platforms.
 
 ---
 
-## Run
+## Install
+
+**Prerequisites:** Python 3.10+ and [Claude Code CLI](https://claude.ai/code) used at least once (so `~/.claude/` exists).
+
+### Linux
 
 ```bash
+pip install PyQt6
 python claude_usage.py
 ```
 
-The window stays on top by default (**Pin** button toggles this) and auto-refreshes every 5 minutes (**↺ 5m** button toggles).
+If `pip` is externally managed (Arch, Debian 12+, Ubuntu 23+):
+
+```bash
+pip install --user PyQt6   # or: pipx run --no-cache PyQt6 ... (not ideal for a GUI app)
+# Recommended: use a venv
+python -m venv .venv && source .venv/bin/activate
+pip install PyQt6 && python claude_usage.py
+```
+
+To add to your app launcher, copy and edit the desktop entry:
+
+```bash
+cp packaging/claude-usage.desktop ~/.local/share/applications/
+nano ~/.local/share/applications/claude-usage.desktop   # fix the Exec= path
+update-desktop-database ~/.local/share/applications/
+```
+
+### macOS
+
+```bash
+pip3 install PyQt6
+python3 claude_usage.py
+```
+
+macOS 13+ ships with Python 3.9 but marks pip as externally managed; use Homebrew Python or a venv:
+
+```bash
+brew install python
+pip3 install PyQt6
+python3 claude_usage.py
+```
+
+To launch without a Terminal window, create a one-line **Automator → Shell Script** app targeting:
+```
+python3 /path/to/claude_usage.py
+```
+
+### Windows
+
+```powershell
+pip install PyQt6
+pythonw claude_usage.py   # pythonw suppresses the console window
+```
+
+Create a desktop shortcut with target:
+```
+pythonw.exe C:\path\to\claude_usage.py
+```
 
 ---
 
 ## Optional: real rate-limit percentages
 
 If you run the Claude Code statusline script it writes live rate-limit data to `~/.claude/rate-limits-cache.json`. When present, the widget shows exact percentages and reset times instead of estimates.
-
----
-
-## Install as a desktop app
-
-### Linux
-
-1. Note the full path to the script, e.g. `/home/you/claude-code-usage/claude_usage.py`
-2. Copy and edit the desktop entry:
-
-```bash
-cp packaging/claude-usage.desktop ~/.local/share/applications/
-# Edit Exec= to point at your script path
-nano ~/.local/share/applications/claude-usage.desktop
-update-desktop-database ~/.local/share/applications/
-```
-
-### macOS
-
-Add a shell alias or use **Automator** to create an Application wrapper:
-
-```bash
-echo 'alias claude-usage="python3 /path/to/claude_usage.py"' >> ~/.zshrc
-```
-
-### Windows
-
-Create a shortcut targeting `pythonw.exe claude_usage.py` (use `pythonw` to suppress the console window).
 
 ---
 
