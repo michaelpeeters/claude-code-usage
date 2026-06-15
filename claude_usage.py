@@ -297,7 +297,7 @@ class PaceBar(QWidget):
 class UsageWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Claude Usage")
+        self.setWindowTitle("Claude™ Usage")
         self.setMinimumWidth(280)
         self.always_on_top = True
         self._apply_flags()
