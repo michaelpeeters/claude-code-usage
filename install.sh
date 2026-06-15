@@ -150,6 +150,17 @@ if [[ "$PLATFORM" == "linux" ]]; then
     mkdir -p "$BIN_DIR"
     ln -sf "$APPIMAGE" "$BIN_DIR/claude-usage"
 
+    # Extract app icon and install into hicolor theme
+    ICON_DIR="$HOME/.local/share/icons/hicolor/256x256/apps"
+    mkdir -p "$ICON_DIR"
+    ICON_TMP=$(mktemp -d)
+    "$APPIMAGE" --appimage-extract utilities-system-monitor.png 2>/dev/null \
+        && cp squashfs-root/utilities-system-monitor.png "$ICON_DIR/claude-usage.png" \
+        || true
+    rm -rf squashfs-root "$ICON_TMP"
+    command -v gtk-update-icon-cache >/dev/null 2>&1 \
+        && gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor/" 2>/dev/null || true
+
     # .desktop entry pointing at the AppImage
     mkdir -p "$DESKTOP_DIR"
     cat > "$DESKTOP_DIR/claude-usage.desktop" <<DESK
@@ -158,7 +169,7 @@ Name=Claude Usage
 GenericName=Token Usage Monitor
 Comment=Monitor Claude Code token consumption (unofficial, not by Anthropic)
 Exec=$APPIMAGE
-Icon=utilities-system-monitor
+Icon=claude-usage
 Type=Application
 Categories=Utility;Monitor;
 Keywords=claude;tokens;usage;
