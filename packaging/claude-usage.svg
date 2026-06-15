@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- drop shadow -->
+  <rect x="4" y="5" width="56" height="56" rx="16.8" ry="16.8" fill="black" opacity="0.2"/>
+  <!-- background -->
+  <rect x="4" y="4" width="56" height="56" rx="16.8" ry="16.8" fill="#4f4f4f"/>
+  <!-- horizontal stripes (clipped to rounded rect) -->
+  <clipPath id="bg">
+    <rect x="4" y="4" width="56" height="56" rx="16.8" ry="16.8"/>
+  </clipPath>
+  <g clip-path="url(#bg)" opacity="0.15">
+    <rect x="4" y="11" width="56" height="3" fill="black"/>
+    <rect x="4" y="19" width="56" height="3" fill="black"/>
+    <rect x="4" y="27" width="56" height="3" fill="black"/>
+    <rect x="4" y="35" width="56" height="3" fill="black"/>
+    <rect x="4" y="43" width="56" height="3" fill="black"/>
+    <rect x="4" y="51" width="56" height="3" fill="black"/>
+  </g>
+  <!-- waveform shadow -->
+  <polyline clip-path="url(#bg)"
+    points="4,32 12.4,32 19.4,18 25,44 34.8,14 41.8,50 50.2,32 60,32"
+    fill="none" stroke="black" stroke-width="6"
+    stroke-linecap="round" stroke-linejoin="round" opacity="0.2"/>
+  <!-- amber waveform -->
+  <polyline clip-path="url(#bg)"
+    points="4,32 12.4,32 19.4,18 25,44 34.8,14 41.8,50 50.2,32 60,32"
+    fill="none" stroke="#f59e0b" stroke-width="6"
+    stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- glass sheen -->
+  <rect x="4" y="4" width="56" height="18" rx="16.8" ry="16.8" fill="white" opacity="0.1"/>
+</svg>

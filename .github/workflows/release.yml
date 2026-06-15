@@ -24,10 +24,13 @@ jobs:
         run: |
           sudo apt-get install -y \
             libgl1 libegl1 libxkbcommon-x11-0 libdbus-1-3 \
-            libxcb-cursor0 libfuse2 patchelf
+            libxcb-cursor0 libfuse2 patchelf librsvg2-bin
 
       - name: Install PyInstaller + app deps
         run: pip install PyInstaller PyQt6
+
+      - name: Render icon PNG from SVG
+        run: rsvg-convert -w 256 -h 256 packaging/claude-usage.svg -o packaging/claude-usage.png
 
       - name: Bundle with PyInstaller
         run: |
@@ -46,7 +49,9 @@ jobs:
           cp packaging/claude-usage.desktop AppDir/claude-usage.desktop
           cp packaging/claude-usage.desktop AppDir/usr/share/applications/
           cp packaging/claude-usage.png AppDir/claude-usage.png
+          cp packaging/claude-usage.png AppDir/utilities-system-monitor.png
           cp packaging/claude-usage.png AppDir/usr/share/icons/hicolor/256x256/apps/claude-usage.png
+          cp packaging/claude-usage.png AppDir/usr/share/icons/hicolor/256x256/apps/utilities-system-monitor.png
           cat > AppDir/AppRun <<'EOF'
           #!/bin/sh
           SELF=$(readlink -f "$0")
