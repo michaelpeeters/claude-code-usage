@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -145,6 +146,7 @@ def test_check_for_update_emits_signal(qapp, tmp_path):
     win.close()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="CA paths are Unix-only")
 def test_check_for_update_uses_system_ca(tmp_path):
     """_check_for_update should pass the system CA bundle to ssl.create_default_context."""
     import json
