@@ -380,16 +380,12 @@ class UsageWindow(QWidget):
             pass
 
     def _show_update_banner(self, latest: str):
-        self._update_lbl.setText(
-            f'↑ <a href="update" style="color:#22c55e;">{latest} available — click to update</a>'
-        )
-        self._update_lbl.setOpenExternalLinks(False)
-        self._update_lbl.linkActivated.connect(self._trigger_update)
-        self._update_lbl.setVisible(True)
+        self._update_btn.setText(f"↑ {latest} available — click to update")
+        self._update_btn.setVisible(True)
 
-    def _trigger_update(self, _href: str = ""):
-        self._update_lbl.setText("Installing update… the app will restart when ready.")
-        self._update_lbl.setOpenExternalLinks(False)
+    def _trigger_update(self):
+        self._update_btn.setText("Installing update… the app will restart when ready.")
+        self._update_btn.setEnabled(False)
         raw = "https://raw.githubusercontent.com/michaelpeeters/claude-code-usage/main"
         appimage = os.environ.get("APPIMAGE", "")
         if sys.platform == "win32":
@@ -566,12 +562,16 @@ class UsageWindow(QWidget):
         root.addLayout(self.model_box)
 
         # ── footer ───────────────────────────────────────────────────────
-        self._update_lbl = QLabel()
-        self._update_lbl.setStyleSheet("color: #22c55e; font-size: 10px;")
-        self._update_lbl.setOpenExternalLinks(False)
-        self._update_lbl.setTextFormat(Qt.TextFormat.RichText)
-        self._update_lbl.setVisible(False)
-        root.addWidget(self._update_lbl)
+        self._update_btn = QPushButton()
+        self._update_btn.setStyleSheet(
+            "QPushButton { background: transparent; border: none;"
+            " color: #22c55e; font-size: 10px; text-align: left; padding: 0; }"
+            " QPushButton:hover { text-decoration: underline; }"
+        )
+        self._update_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._update_btn.clicked.connect(self._trigger_update)
+        self._update_btn.setVisible(False)
+        root.addWidget(self._update_btn)
 
         self.updated_label = QLabel()
         self.updated_label.setStyleSheet("color: #555; font-size: 10px;")

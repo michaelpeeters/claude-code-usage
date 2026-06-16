@@ -183,14 +183,14 @@ def test_check_for_update_uses_system_ca(tmp_path):
 
 
 def test_window_shows_update_banner(qapp, tmp_path):
-    """_show_update_banner should make the update label visible with version text."""
+    """_show_update_banner should make the update button visible with version text."""
     with (
         patch("claude_usage.PROJECTS_DIR", tmp_path),
         patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
     ):
         win = UsageWindow()
-        assert win._update_lbl.isHidden()
+        assert win._update_btn.isHidden()
         win._show_update_banner("v9.9.9")
-        assert not win._update_lbl.isHidden()
-        assert "v9.9.9" in win._update_lbl.text()
+        assert not win._update_btn.isHidden()
+        assert "v9.9.9" in win._update_btn.text()
         win.close()
