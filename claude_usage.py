@@ -2,7 +2,9 @@
 """Claude Code usage monitor — reads local ~/.claude data, no API needed."""
 
 import json
+import os
 import ssl
+import subprocess
 import sys
 import threading
 import urllib.request
@@ -367,18 +369,46 @@ class UsageWindow(QWidget):
             latest = data.get("tag_name", "")
             if latest and latest != APP_VERSION:
                 self._update_available.emit(latest)
-        except Exception as e:
-            Path("/tmp/claude_usage_update_error.txt").write_text(
-                f"APP_VERSION={APP_VERSION}\nerror={type(e).__name__}: {e}\n"
-            )
+        except Exception:
+            pass
 
     def _show_update_banner(self, latest: str):
-        url = f"https://github.com/michaelpeeters/claude-code-usage/releases/tag/{latest}"
         self._update_lbl.setText(
-            f'↑ <a href="{url}" style="color:#22c55e;">{latest} available</a> — re-run installer to update'
+            f'↑ <a href="update" style="color:#22c55e;">{latest} available — click to update</a>'
         )
-        self._update_lbl.setOpenExternalLinks(True)
+        self._update_lbl.setOpenExternalLinks(False)
+        self._update_lbl.linkActivated.connect(self._trigger_update)
         self._update_lbl.setVisible(True)
+
+    def _trigger_update(self):
+        self._update_lbl.setText("Installing update… the app will restart when ready.")
+        self._update_lbl.setOpenExternalLinks(False)
+        raw = "https://raw.githubusercontent.com/michaelpeeters/claude-code-usage/main"
+        appimage = os.environ.get("APPIMAGE", "")
+        if sys.platform == "win32":
+            subprocess.Popen(
+                ["powershell", "-ExecutionPolicy", "Bypass", "-Command", f"irm {raw}/install.ps1 | iex"],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+            )
+        elif sys.platform == "darwin":
+            subprocess.Popen(["bash", "-c", f'curl -fsSL {raw}/install.sh | bash && open -a "Claude Usage"'])
+            from PyQt6.QtWidgets import QApplication
+
+            QApplication.quit()
+        else:
+            if appimage:
+                # AppImage install: run installer then exec new binary
+                subprocess.Popen(
+                    ["bash", "-c", f"curl -fsSL {raw}/install.sh | bash && exec {appimage}"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                from PyQt6.QtWidgets import QApplication
+
+                QApplication.quit()
+            else:
+                # AUR / source install
+                subprocess.Popen(["bash", "-c", f"curl -fsSL {raw}/install.sh | bash"])
 
     def _toggle_auto(self):
         if self.auto_btn.isChecked():
