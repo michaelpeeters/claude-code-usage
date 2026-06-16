@@ -364,8 +364,15 @@ class UsageWindow(QWidget):
                     break
 
             req = urllib.request.Request(_RELEASES_API, headers={"User-Agent": "claude-code-usage"})
-            with urllib.request.urlopen(req, timeout=8, context=ctx) as resp:
-                data = json.loads(resp.read())
+            for attempt in range(2):
+                try:
+                    with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                        data = json.loads(resp.read())
+                    break
+                except TimeoutError:
+                    if attempt == 0:
+                        continue
+                    raise
             latest = data.get("tag_name", "")
             if latest and latest != APP_VERSION:
                 self._update_available.emit(latest)
