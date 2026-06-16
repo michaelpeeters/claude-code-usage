@@ -134,6 +134,8 @@ mypy claude_usage.py               # type check
 
 CI runs lint + type checks + tests on Linux (Python 3.10–3.13), macOS, and Windows. CodeQL SAST runs on every PR and weekly.
 
+Tests cover: token formatting, JSONL aggregation, stats-cache seeding, window instantiation, label refresh, implied-limit calculation, paint events for bar/chart widgets, update-check signal emission, and system CA bundle selection.
+
 ### Packaging
 
 Binaries (AppImage / macOS app / Windows exe) are built and released automatically on every merge to `main`. Download from the [Releases](https://github.com/michaelpeeters/claude-code-usage/releases) page.

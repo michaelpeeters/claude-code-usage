@@ -118,6 +118,68 @@ def test_paint_mini_bar_chart(qapp):
         p.end()
 
 
+def test_check_for_update_emits_signal(qapp, tmp_path):
+    """_check_for_update should emit _update_available when a newer version exists.
+    Mocks the network call so the test is offline-safe."""
+    import json
+    from unittest.mock import MagicMock
+
+    fake_response = MagicMock()
+    fake_response.read.return_value = json.dumps({"tag_name": "v9.9.9"}).encode()
+    fake_response.__enter__ = lambda s: s
+    fake_response.__exit__ = MagicMock(return_value=False)
+
+    received: list[str] = []
+
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.APP_VERSION", "v0.0.1"),
+        patch("claude_usage.urllib.request.urlopen", return_value=fake_response),
+    ):
+        win = UsageWindow()
+        win._update_available.connect(received.append)
+        win._check_for_update()  # run synchronously in test
+
+    assert received == ["v9.9.9"]
+    win.close()
+
+
+def test_check_for_update_uses_system_ca(tmp_path):
+    """_check_for_update should pass the system CA bundle to ssl.create_default_context."""
+    import json
+    from unittest.mock import MagicMock
+
+    fake_response = MagicMock()
+    fake_response.read.return_value = json.dumps({"tag_name": "v0.0.1"}).encode()
+    fake_response.__enter__ = lambda s: s
+    fake_response.__exit__ = MagicMock(return_value=False)
+
+    ctx_created_with: list = []
+
+    def fake_create_default_context(cafile=None):
+        ctx_created_with.append(cafile)
+        return MagicMock()
+
+    # Simulate only /etc/ssl/cert.pem existing (Arch/Manjaro)
+    def fake_path_exists(self):
+        return str(self) == "/etc/ssl/cert.pem"
+
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.APP_VERSION", "v0.0.1"),
+        patch("claude_usage.urllib.request.urlopen", return_value=fake_response),
+        patch("claude_usage.ssl.create_default_context", side_effect=fake_create_default_context),
+        patch("claude_usage.Path.exists", fake_path_exists),
+    ):
+        win = UsageWindow()
+        win._check_for_update()
+
+    assert "/etc/ssl/cert.pem" in ctx_created_with
+    win.close()
+
+
 def test_window_shows_update_banner(qapp, tmp_path):
     """_show_update_banner should make the update label visible with version text."""
     with (

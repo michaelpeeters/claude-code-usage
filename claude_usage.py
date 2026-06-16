@@ -2,6 +2,7 @@
 """Claude Code usage monitor — reads local ~/.claude data, no API needed."""
 
 import json
+import ssl
 import sys
 import threading
 import urllib.request
@@ -348,12 +349,11 @@ class UsageWindow(QWidget):
         if APP_VERSION == "dev":
             return
         try:
-            import ssl
-
             # PyInstaller bundles its own OpenSSL without a CA store; point at the system bundle.
             ctx = ssl.create_default_context()
             for ca in (
-                "/etc/ssl/certs/ca-certificates.crt",  # Debian/Ubuntu/Arch
+                "/etc/ssl/cert.pem",  # Arch/Manjaro
+                "/etc/ssl/certs/ca-certificates.crt",  # Debian/Ubuntu
                 "/etc/pki/tls/certs/ca-bundle.crt",  # RHEL/Fedora
                 "/etc/ssl/ca-bundle.pem",  # openSUSE
             ):
