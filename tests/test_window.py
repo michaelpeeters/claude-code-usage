@@ -204,6 +204,7 @@ def test_trigger_update_strips_ld_library_path(qapp, tmp_path):
         win._trigger_update()
         # Give the thread a moment to run
         import time
+
         time.sleep(0.5)
 
     assert captured_envs, "subprocess.run was never called"
