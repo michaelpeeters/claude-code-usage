@@ -56,6 +56,15 @@ MODEL_SHORT = {
 }
 
 
+def _infer_plan(ceiling_5h: int) -> str:
+    """Guess the Claude plan from the implied 5-hour token ceiling."""
+    if ceiling_5h >= 10_000_000:
+        return "Max 20x"
+    if ceiling_5h >= 3_000_000:
+        return "Max 5x"
+    return "Pro"
+
+
 def fmt_tokens(n: int) -> str:
     if n >= 1_000_000:
         return f"{n / 1_000_000:.1f}M"
@@ -482,9 +491,17 @@ class UsageWindow(QWidget):
         hdr.addWidget(refresh_btn)
         root.addLayout(hdr)
 
+        sub = QHBoxLayout()
+        sub.setContentsMargins(0, 0, 0, 0)
         disclaimer = QLabel("Unofficial · not by Anthropic")
         disclaimer.setStyleSheet("color: #555; font-size: 9px;")
-        root.addWidget(disclaimer)
+        self._plan_lbl = QLabel("")
+        self._plan_lbl.setStyleSheet("color: #555; font-size: 9px;")
+        self._plan_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        sub.addWidget(disclaimer)
+        sub.addStretch()
+        sub.addWidget(self._plan_lbl)
+        root.addLayout(sub)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
@@ -636,6 +653,7 @@ class UsageWindow(QWidget):
                 self.win_detail_lbl.setText(
                     f"{reset_str} · {fmt_tokens(win_tokens)} / {fmt_tokens(implied_limit)}"
                 )
+                self._plan_lbl.setText("~" + _infer_plan(implied_limit))
             else:
                 self.pace_bar.set_value(int(fh_pct), 100)
                 self.win_detail_lbl.setText(f"{reset_str} · {fmt_tokens(win_tokens)} in last 5h")
