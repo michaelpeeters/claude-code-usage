@@ -326,6 +326,7 @@ class PaceBar(QWidget):
 
 class UsageWindow(QWidget):
     _update_available = pyqtSignal(str)
+    _restart_app = pyqtSignal(str)  # emitted from install thread → main thread relaunches
 
     def __init__(self):
         super().__init__()
@@ -341,6 +342,7 @@ class UsageWindow(QWidget):
             self._tray.activated.connect(self._tray_clicked)
             self._tray.show()
         self._update_available.connect(self._show_update_banner)
+        self._restart_app.connect(self._do_restart)
         self.refresh()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh)
@@ -383,6 +385,11 @@ class UsageWindow(QWidget):
         self._update_btn.setText(f"↑ {latest} available — click to update")
         self._update_btn.setVisible(True)
 
+    def _do_restart(self, appimage: str):
+        """Called on the main thread after install completes — launch new binary then quit."""
+        subprocess.Popen([appimage])
+        QApplication.quit()
+
     def _trigger_update(self):
         self._update_btn.setText("Downloading update…")
         self._update_btn.setEnabled(False)
@@ -398,14 +405,12 @@ class UsageWindow(QWidget):
             elif sys.platform == "darwin":
                 subprocess.run(["bash", "-c", f"curl -fsSL {raw}/install.sh | bash"], check=False)
                 subprocess.Popen(["open", "-a", "Claude Usage"])
-                from PyQt6.QtWidgets import QApplication
-
                 QApplication.quit()
             else:
                 subprocess.run(["bash", "-c", f"curl -fsSL {raw}/install.sh | bash"], check=False)
                 if appimage:
-                    # Replace this process with the freshly-installed binary.
-                    os.execv(appimage, [appimage])
+                    # Emit signal so the main thread launches the new binary and quits.
+                    self._restart_app.emit(appimage)
 
         threading.Thread(target=_install, daemon=False).start()
 
