@@ -562,14 +562,18 @@ class UsageWindow(QWidget):
         if fh and "used_percentage" in fh:
             fh_pct = fh["used_percentage"]
             reset_ts = fh.get("resets_at")
-            if reset_ts:
-                reset_dt = datetime.fromtimestamp(reset_ts)
-                reset_str = reset_dt.strftime("resets %H:%M")
+            reset_str = datetime.fromtimestamp(reset_ts).strftime("resets %H:%M") if reset_ts else "real data"
+            # Derive the real ceiling from (tokens / pct) when we have both; otherwise fall back
+            if fh_pct > 0 and win_tokens > 0:
+                implied_limit = int(win_tokens / (fh_pct / 100))
+                self.pace_bar.set_value(win_tokens, implied_limit)
+                self.win_detail_lbl.setText(
+                    f"{reset_str} · {fmt_tokens(win_tokens)} / {fmt_tokens(implied_limit)}"
+                )
             else:
-                reset_str = "real data"
-            self.pace_bar.set_value(int(fh_pct), 100)
+                self.pace_bar.set_value(int(fh_pct), 100)
+                self.win_detail_lbl.setText(f"{reset_str} · {fmt_tokens(win_tokens)} in last 5h")
             self.win_pct_lbl.setText(f"{fh_pct:.0f}%")
-            self.win_detail_lbl.setText(f"{reset_str} · {fmt_tokens(win_tokens)} in last 5h")
             icon_pct = fh_pct
         else:
             ratio = min(1.0, win_tokens / THROTTLE_ESTIMATE)
@@ -615,14 +619,19 @@ class UsageWindow(QWidget):
         if sd and "used_percentage" in sd:
             sd_pct = sd["used_percentage"]
             reset_ts = sd.get("resets_at")
-            if reset_ts:
-                reset_dt = datetime.fromtimestamp(reset_ts)
-                reset_str = reset_dt.strftime("resets %a %H:%M")
+            reset_str = (
+                datetime.fromtimestamp(reset_ts).strftime("resets %a %H:%M") if reset_ts else "real data"
+            )
+            if sd_pct > 0 and w_tokens > 0:
+                implied_week_limit = int(w_tokens / (sd_pct / 100))
+                self.week_pace_bar.set_value(w_tokens, implied_week_limit)
+                self.week_detail_lbl.setText(
+                    f"{reset_str} · {fmt_tokens(w_tokens)} / {fmt_tokens(implied_week_limit)}"
+                )
             else:
-                reset_str = "real data"
-            self.week_pace_bar.set_value(int(sd_pct), 100)
+                self.week_pace_bar.set_value(int(sd_pct), 100)
+                self.week_detail_lbl.setText(f"{reset_str} · {fmt_tokens(w_tokens)} this week")
             self.week_pct_lbl.setText(f"{sd_pct:.0f}%")
-            self.week_detail_lbl.setText(f"{reset_str} · {fmt_tokens(w_tokens)} this week")
         else:
             w_pct = int(min(1.0, w_tokens / WEEK_ESTIMATE) * 100)
             self.week_pace_bar.set_value(w_tokens, WEEK_ESTIMATE)
