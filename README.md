@@ -13,6 +13,7 @@ A lightweight PyQt6 desktop widget that shows your [Claude Code](https://claude.
 - 7-day bar chart and totals
 - Per-model token breakdown (Sonnet / Opus / Haiku)
 - Real rate-limit percentages when the Claude Code statusline script is running
+- In-app notification when a newer version is available
 
 ---
 

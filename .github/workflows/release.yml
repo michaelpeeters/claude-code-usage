@@ -153,3 +153,12 @@ jobs:
             *.AppImage
             *.zip
             *.exe
+
+      - name: Prune old releases (keep 5)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --repo ${{ github.repository }} --limit 100 --json tagName,isDraft,isPrerelease \
+            | jq -r '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' \
+            | tail -n +6 \
+            | xargs -I{} gh release delete {} --repo ${{ github.repository }} --yes --cleanup-tag || true

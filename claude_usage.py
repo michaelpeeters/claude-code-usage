@@ -3,11 +3,13 @@
 
 import json
 import sys
+import threading
+import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QGuiApplication, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
@@ -20,6 +22,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+APP_VERSION = "v0.1.10"
+_RELEASES_API = "https://api.github.com/repos/michaelpeeters/claude-code-usage/releases/latest"
 
 CLAUDE_DIR = Path.home() / ".claude"
 STATS_CACHE = CLAUDE_DIR / "stats-cache.json"
@@ -317,6 +322,8 @@ class PaceBar(QWidget):
 
 
 class UsageWindow(QWidget):
+    _update_available = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Claude™ Usage")
@@ -330,10 +337,31 @@ class UsageWindow(QWidget):
             self._tray.setToolTip("Claude Usage · unofficial tool, not by Anthropic")
             self._tray.activated.connect(self._tray_clicked)
             self._tray.show()
+        self._update_available.connect(self._show_update_banner)
         self.refresh()
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.refresh)
         self._timer.start(5 * 60 * 1000)
+        threading.Thread(target=self._check_for_update, daemon=True).start()
+
+    def _check_for_update(self):
+        try:
+            req = urllib.request.Request(_RELEASES_API, headers={"User-Agent": "claude-code-usage"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read())
+            latest = data.get("tag_name", "")
+            if latest and latest != APP_VERSION:
+                self._update_available.emit(latest)
+        except Exception:
+            pass
+
+    def _show_update_banner(self, latest: str):
+        url = f"https://github.com/michaelpeeters/claude-code-usage/releases/tag/{latest}"
+        self._update_lbl.setText(
+            f'↑ <a href="{url}" style="color:#22c55e;">{latest} available</a> — re-run installer to update'
+        )
+        self._update_lbl.setOpenExternalLinks(True)
+        self._update_lbl.setVisible(True)
 
     def _toggle_auto(self):
         if self.auto_btn.isChecked():
@@ -484,6 +512,13 @@ class UsageWindow(QWidget):
         root.addLayout(self.model_box)
 
         # ── footer ───────────────────────────────────────────────────────
+        self._update_lbl = QLabel()
+        self._update_lbl.setStyleSheet("color: #22c55e; font-size: 10px;")
+        self._update_lbl.setOpenExternalLinks(False)
+        self._update_lbl.setTextFormat(Qt.TextFormat.RichText)
+        self._update_lbl.setVisible(False)
+        root.addWidget(self._update_lbl)
+
         self.updated_label = QLabel()
         self.updated_label.setStyleSheet("color: #555; font-size: 10px;")
         self.updated_label.setAlignment(Qt.AlignmentFlag.AlignRight)
