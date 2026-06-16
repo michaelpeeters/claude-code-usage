@@ -397,17 +397,21 @@ class UsageWindow(QWidget):
         appimage = os.environ.get("APPIMAGE", "")
 
         def _install():
+            # Strip AppImage-injected library paths so system curl/bash use system libs.
+            clean_env = {k: v for k, v in os.environ.items() if k not in ("LD_LIBRARY_PATH", "LD_PRELOAD")}
             if sys.platform == "win32":
                 subprocess.Popen(
                     ["powershell", "-ExecutionPolicy", "Bypass", "-Command", f"irm {raw}/install.ps1 | iex"],
                     creationflags=subprocess.CREATE_NEW_CONSOLE,
                 )
             elif sys.platform == "darwin":
-                subprocess.run(["bash", "-c", f"curl -fsSL {raw}/install.sh | bash"], check=False)
+                cmd = f"curl -fsSL {raw}/install.sh | bash"
+                subprocess.run(["bash", "-c", cmd], check=False, env=clean_env)
                 subprocess.Popen(["open", "-a", "Claude Usage"])
                 QApplication.quit()
             else:
-                subprocess.run(["bash", "-c", f"curl -fsSL {raw}/install.sh | bash"], check=False)
+                cmd = f"curl -fsSL {raw}/install.sh | bash"
+                subprocess.run(["bash", "-c", cmd], check=False, env=clean_env)
                 if appimage:
                     # Emit signal so the main thread launches the new binary and quits.
                     self._restart_app.emit(appimage)
