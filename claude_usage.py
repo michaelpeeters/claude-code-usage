@@ -399,6 +399,7 @@ class UsageWindow(QWidget):
                 subprocess.run(["bash", "-c", f"curl -fsSL {raw}/install.sh | bash"], check=False)
                 subprocess.Popen(["open", "-a", "Claude Usage"])
                 from PyQt6.QtWidgets import QApplication
+
                 QApplication.quit()
             else:
                 subprocess.run(["bash", "-c", f"curl -fsSL {raw}/install.sh | bash"], check=False)
