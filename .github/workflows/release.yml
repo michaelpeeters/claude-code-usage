@@ -40,6 +40,9 @@ jobs:
       - name: Install PyInstaller + app deps
         run: pip install PyInstaller PyQt6
 
+      - name: Inject release version
+        run: sed -i "s/APP_VERSION = .*/APP_VERSION = \"${{ env.REL_TAG }}\"/" claude_usage.py
+
       - name: Render icon PNG from SVG
         run: rsvg-convert -w 256 -h 256 packaging/claude-usage.svg -o packaging/claude-usage.png
 
@@ -102,6 +105,8 @@ jobs:
           python-version: "3.12"
       - name: Install PyInstaller + app deps
         run: pip install PyInstaller PyQt6 Pillow
+      - name: Inject release version
+        run: sed -i "" "s/APP_VERSION = .*/APP_VERSION = \"${{ env.REL_TAG }}\"/" claude_usage.py
       - name: Bundle
         run: |
           pyinstaller --windowed --name "Claude Usage" \
@@ -127,6 +132,8 @@ jobs:
           python-version: "3.12"
       - name: Install PyInstaller + app deps
         run: pip install PyInstaller PyQt6 Pillow
+      - name: Inject release version
+        run: (Get-Content claude_usage.py) -replace 'APP_VERSION = .*', 'APP_VERSION = "${{ env.REL_TAG }}"' | Set-Content claude_usage.py
       - name: Bundle
         run: pyinstaller --onefile --windowed --name claude-usage --icon packaging/claude-usage.png claude_usage.py
       - uses: actions/upload-artifact@v4

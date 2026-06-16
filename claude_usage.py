@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-APP_VERSION = "v0.1.10"
+APP_VERSION = "dev"
 _RELEASES_API = "https://api.github.com/repos/michaelpeeters/claude-code-usage/releases/latest"
 
 CLAUDE_DIR = Path.home() / ".claude"
@@ -345,6 +345,8 @@ class UsageWindow(QWidget):
         threading.Thread(target=self._check_for_update, daemon=True).start()
 
     def _check_for_update(self):
+        if APP_VERSION == "dev":
+            return
         try:
             req = urllib.request.Request(_RELEASES_API, headers={"User-Agent": "claude-code-usage"})
             with urllib.request.urlopen(req, timeout=8) as resp:
