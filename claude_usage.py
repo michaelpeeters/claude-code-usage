@@ -578,10 +578,17 @@ class UsageWindow(QWidget):
         self._update_btn.setVisible(False)
         root.addWidget(self._update_btn)
 
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 0, 0, 0)
+        ver_lbl = QLabel(APP_VERSION if APP_VERSION != "dev" else "")
+        ver_lbl.setStyleSheet("color: #555; font-size: 10px;")
         self.updated_label = QLabel()
         self.updated_label.setStyleSheet("color: #555; font-size: 10px;")
         self.updated_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        root.addWidget(self.updated_label)
+        footer.addWidget(ver_lbl)
+        footer.addStretch()
+        footer.addWidget(self.updated_label)
+        root.addLayout(footer)
 
     def _stat_box(self, label: str, value: str):
         box = QWidget()
