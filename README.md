@@ -9,11 +9,11 @@ A lightweight PyQt6 desktop widget that shows your [Claude Code](https://claude.
 
 **What it shows:**
 - Today's messages, tokens, and sessions
-- Rolling 5-hour window gauge (throttle risk indicator)
+- Rolling 5-hour window gauge with implied token ceiling and inferred plan (~Pro / ~Max 5x / ~Max 20x)
 - 7-day bar chart and totals
 - Per-model token breakdown (Sonnet / Opus / Haiku)
 - Real rate-limit percentages when the Claude Code statusline script is running
-- In-app notification when a newer version is available
+- In-app one-click update when a newer version is available (auto-restarts)
 
 ---
 
@@ -134,7 +134,7 @@ mypy claude_usage.py               # type check
 
 CI runs lint + type checks + tests on Linux (Python 3.10–3.13), macOS, and Windows. CodeQL SAST runs on every PR and weekly.
 
-Tests cover: token formatting, JSONL aggregation, stats-cache seeding, window instantiation, label refresh, implied-limit calculation, paint events for bar/chart widgets, update-check signal emission, and system CA bundle selection.
+Tests cover: token formatting, JSONL aggregation, stats-cache seeding, window instantiation, label refresh, implied-limit calculation, paint events for bar/chart widgets, update-check signal emission, system CA bundle selection, and LD_LIBRARY_PATH stripping for the in-app updater.
 
 ### Packaging
 
