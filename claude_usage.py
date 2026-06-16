@@ -387,7 +387,7 @@ class UsageWindow(QWidget):
         self._update_lbl.linkActivated.connect(self._trigger_update)
         self._update_lbl.setVisible(True)
 
-    def _trigger_update(self):
+    def _trigger_update(self, _href: str = ""):
         self._update_lbl.setText("Installing update… the app will restart when ready.")
         self._update_lbl.setOpenExternalLinks(False)
         raw = "https://raw.githubusercontent.com/michaelpeeters/claude-code-usage/main"
