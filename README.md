@@ -5,9 +5,8 @@
 
 A lightweight PyQt6 desktop widget that shows your [Claude Code](https://claude.ai/code) token consumption at a glance — no API key required. Reads the local `~/.claude/` data written by the CLI.
 
-| ~Pro · low usage | ~Max 5x · medium | ~Max 20x · high |
-|:---:|:---:|:---:|
 | ![pro low](packaging/screenshot_pro_low.png) | ![max5x medium](packaging/screenshot_max5x_medium.png) | ![max20x high](packaging/screenshot_max20x_high.png) |
+|:---:|:---:|:---:|
 
 **What it shows:**
 - Today's messages, tokens, and sessions
