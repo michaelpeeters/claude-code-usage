@@ -182,6 +182,36 @@ def test_check_for_update_uses_system_ca(tmp_path):
     win.close()
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="LD_LIBRARY_PATH stripping is Linux/AppImage-specific")
+def test_trigger_update_strips_ld_library_path(qapp, tmp_path):
+    """_trigger_update must not pass LD_LIBRARY_PATH to curl — AppImage injects an
+    incompatible bundled libssl that breaks system curl on Manjaro/Arch."""
+    from unittest.mock import MagicMock
+
+    captured_envs: list[dict] = []
+
+    def fake_run(args, **kwargs):
+        captured_envs.append(kwargs.get("env", {}))
+        return MagicMock(returncode=0)
+
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.os.environ", {**os.environ, "LD_LIBRARY_PATH": "/bad/path", "APPIMAGE": ""}),
+        patch("claude_usage.subprocess.run", side_effect=fake_run),
+    ):
+        win = UsageWindow()
+        win._trigger_update()
+        # Give the thread a moment to run
+        import time
+        time.sleep(0.5)
+
+    assert captured_envs, "subprocess.run was never called"
+    assert "LD_LIBRARY_PATH" not in captured_envs[0], "LD_LIBRARY_PATH must be stripped from curl env"
+    assert "LD_PRELOAD" not in captured_envs[0]
+    win.close()
+
+
 def test_window_shows_update_banner(qapp, tmp_path):
     """_show_update_banner should make the update button visible with version text."""
     with (
