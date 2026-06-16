@@ -348,8 +348,21 @@ class UsageWindow(QWidget):
         if APP_VERSION == "dev":
             return
         try:
+            import ssl
+
+            # PyInstaller bundles its own OpenSSL without a CA store; point at the system bundle.
+            ctx = ssl.create_default_context()
+            for ca in (
+                "/etc/ssl/certs/ca-certificates.crt",  # Debian/Ubuntu/Arch
+                "/etc/pki/tls/certs/ca-bundle.crt",  # RHEL/Fedora
+                "/etc/ssl/ca-bundle.pem",  # openSUSE
+            ):
+                if Path(ca).exists():
+                    ctx = ssl.create_default_context(cafile=ca)
+                    break
+
             req = urllib.request.Request(_RELEASES_API, headers={"User-Agent": "claude-code-usage"})
-            with urllib.request.urlopen(req, timeout=8) as resp:
+            with urllib.request.urlopen(req, timeout=8, context=ctx) as resp:
                 data = json.loads(resp.read())
             latest = data.get("tag_name", "")
             if latest and latest != APP_VERSION:
