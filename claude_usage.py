@@ -367,8 +367,10 @@ class UsageWindow(QWidget):
             latest = data.get("tag_name", "")
             if latest and latest != APP_VERSION:
                 self._update_available.emit(latest)
-        except Exception:
-            pass
+        except Exception as e:
+            Path("/tmp/claude_usage_update_error.txt").write_text(
+                f"APP_VERSION={APP_VERSION}\nerror={type(e).__name__}: {e}\n"
+            )
 
     def _show_update_banner(self, latest: str):
         url = f"https://github.com/michaelpeeters/claude-code-usage/releases/tag/{latest}"
