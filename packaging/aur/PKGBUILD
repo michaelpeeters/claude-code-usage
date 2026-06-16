@@ -1,5 +1,5 @@
 pkgname=claude-code-usage
-pkgver=0.1.10
+pkgver=0.1.14
 pkgrel=1
 pkgdesc="Unofficial desktop widget for monitoring Claude Code token usage (not by Anthropic)"
 arch=('any')
@@ -7,7 +7,7 @@ url="https://github.com/michaelpeeters/claude-code-usage"
 license=('MIT')
 depends=('python' 'python-pyqt6')
 source=("${pkgname}-${pkgver}.tar.gz::https://github.com/michaelpeeters/${pkgname}/archive/refs/tags/v${pkgver}.tar.gz")
-sha256sums=('d3cf30b2c358859fae0b5f2aa54cb7852bbbd733df3b435c20a6f65777b7b239')
+sha256sums=('d9ad3f5bf2a60fcbc6ba146c3429cc87ab70466bdc233fb773cea4c2a15a8c51')
 
 package() {
     cd "${pkgname}-${pkgver}"
