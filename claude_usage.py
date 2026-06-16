@@ -384,34 +384,29 @@ class UsageWindow(QWidget):
         self._update_btn.setVisible(True)
 
     def _trigger_update(self):
-        self._update_btn.setText("Installing update… the app will restart when ready.")
+        self._update_btn.setText("Downloading update…")
         self._update_btn.setEnabled(False)
         raw = "https://raw.githubusercontent.com/michaelpeeters/claude-code-usage/main"
         appimage = os.environ.get("APPIMAGE", "")
-        if sys.platform == "win32":
-            subprocess.Popen(
-                ["powershell", "-ExecutionPolicy", "Bypass", "-Command", f"irm {raw}/install.ps1 | iex"],
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
-            )
-        elif sys.platform == "darwin":
-            subprocess.Popen(["bash", "-c", f'curl -fsSL {raw}/install.sh | bash && open -a "Claude Usage"'])
-            from PyQt6.QtWidgets import QApplication
 
-            QApplication.quit()
-        else:
-            if appimage:
-                # AppImage install: run installer then exec new binary
+        def _install():
+            if sys.platform == "win32":
                 subprocess.Popen(
-                    ["bash", "-c", f"curl -fsSL {raw}/install.sh | bash && exec {appimage}"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    ["powershell", "-ExecutionPolicy", "Bypass", "-Command", f"irm {raw}/install.ps1 | iex"],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
                 )
+            elif sys.platform == "darwin":
+                subprocess.run(["bash", "-c", f"curl -fsSL {raw}/install.sh | bash"], check=False)
+                subprocess.Popen(["open", "-a", "Claude Usage"])
                 from PyQt6.QtWidgets import QApplication
-
                 QApplication.quit()
             else:
-                # AUR / source install
-                subprocess.Popen(["bash", "-c", f"curl -fsSL {raw}/install.sh | bash"])
+                subprocess.run(["bash", "-c", f"curl -fsSL {raw}/install.sh | bash"], check=False)
+                if appimage:
+                    # Replace this process with the freshly-installed binary.
+                    os.execv(appimage, [appimage])
+
+        threading.Thread(target=_install, daemon=False).start()
 
     def _toggle_auto(self):
         if self.auto_btn.isChecked():
