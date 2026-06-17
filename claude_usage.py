@@ -12,6 +12,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import time
+
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QGuiApplication, QIcon, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
@@ -33,6 +35,7 @@ CLAUDE_DIR = Path.home() / ".claude"
 STATS_CACHE = CLAUDE_DIR / "stats-cache.json"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
 RATE_LIMITS_CACHE = CLAUDE_DIR / "rate-limits-cache.json"
+POS_CACHE = CLAUDE_DIR / "claude-usage-pos.json"
 
 ACCENT = "#d97706"  # amber
 BG = "#1a1a1a"
@@ -336,6 +339,7 @@ class PaceBar(QWidget):
 class UsageWindow(QWidget):
     _update_available = pyqtSignal(str)
     _restart_app = pyqtSignal(str)  # emitted from install thread → main thread relaunches
+    _refresh_done = pyqtSignal(dict, int, dict)  # daily, win_tokens, rate_limits
 
     def __init__(self):
         super().__init__()
@@ -352,10 +356,18 @@ class UsageWindow(QWidget):
             self._tray.show()
         self._update_available.connect(self._show_update_banner)
         self._restart_app.connect(self._do_restart)
+        self._refresh_done.connect(self._apply_refresh)
+        self._refreshing = False
+        self._last_refresh = 0.0  # wall-clock seconds (time.time()), so sleep counts
         self.refresh()
+        # Watchdog fires every 30s and triggers a refresh if >5 min of wall-clock time
+        # have elapsed since the last completed refresh. Because time.time() advances
+        # during system sleep while CLOCK_MONOTONIC (used by QTimer internally) does not,
+        # the watchdog fires immediately after wake-from-sleep when the regular timer
+        # would still be waiting out its pre-sleep remaining interval.
         self._timer = QTimer(self)
-        self._timer.timeout.connect(self.refresh)
-        self._timer.start(5 * 60 * 1000)
+        self._timer.timeout.connect(self._watchdog)
+        self._timer.start(30_000)
         threading.Thread(target=self._check_for_update, daemon=True).start()
 
     def _check_for_update(self):
@@ -427,11 +439,14 @@ class UsageWindow(QWidget):
 
         threading.Thread(target=_install, daemon=False).start()
 
+    def _watchdog(self):
+        if not self.auto_btn.isChecked():
+            return
+        if time.time() - self._last_refresh >= 5 * 60:
+            self.refresh()
+
     def _toggle_auto(self):
-        if self.auto_btn.isChecked():
-            self._timer.start(5 * 60 * 1000)
-        else:
-            self._timer.stop()
+        pass  # watchdog reads auto_btn state directly
 
     def _tray_clicked(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
@@ -631,13 +646,26 @@ class UsageWindow(QWidget):
         self.setGeometry(geo)
 
     def refresh(self):
-        try:
-            daily = collect_usage()
-            win_tokens = collect_5h_window()
-            rl = load_rate_limits()
-        except Exception as e:
-            self.updated_label.setText(f"Error: {e}")
+        if self._refreshing:
             return
+        self._refreshing = True
+        self.updated_label.setText("Refreshing…")
+
+        def _worker():
+            try:
+                daily = collect_usage()
+                win_tokens = collect_5h_window()
+                rl = load_rate_limits()
+                self._refresh_done.emit(daily, win_tokens, rl)
+            except Exception as e:
+                self._refreshing = False
+                self.updated_label.setText(f"Error: {e}")
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _apply_refresh(self, daily: dict, win_tokens: int, rl: dict):
+        self._refreshing = False
+        self._last_refresh = time.time()
 
         # 5-hour window — prefer real % from statusline cache, fall back to estimate
         fh = rl.get("five_hour", {})
@@ -746,11 +774,38 @@ class UsageWindow(QWidget):
 
         self.updated_label.setText(f"Updated {datetime.now().strftime('%H:%M:%S')}")
 
+    def closeEvent(self, event):
+        _save_position(self.pos())
+        super().closeEvent(event)
+
+
+def _save_position(pos) -> None:
+    try:
+        POS_CACHE.write_text(json.dumps({"x": pos.x(), "y": pos.y()}))
+    except Exception:
+        pass
+
+
+def _load_position():
+    """Return (x, y) from cache if on-screen, else None."""
+    try:
+        data = json.loads(POS_CACHE.read_text())
+        x, y = int(data["x"]), int(data["y"])
+        screens = QGuiApplication.screens()
+        if any(s.availableGeometry().contains(x + 10, y + 10) for s in screens):
+            return x, y
+    except Exception:
+        pass
+    return None
+
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Claude Usage")
     win = UsageWindow()
+    pos = _load_position()
+    if pos:
+        win.move(*pos)
     win.show()
     sys.exit(app.exec())
 

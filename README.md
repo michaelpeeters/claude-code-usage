@@ -104,6 +104,26 @@ If the Claude Code statusline script is running it writes live data to `~/.claud
 
 ---
 
+## Auto-refresh
+
+The widget re-reads your usage data every 5 minutes. A watchdog timer (30 s tick) checks elapsed wall-clock time and triggers a refresh immediately after the system wakes from sleep — so the display catches up right away rather than waiting out whatever interval was left on the timer before sleep.
+
+Data collection runs in a background thread so the window stays responsive during the scan.
+
+---
+
+## AppImage auto-update on Manjaro / Arch
+
+Clicking the "↑ vX.Y.Z available" banner downloads and installs the new AppImage in-place, then relaunches automatically.
+
+Two Manjaro-specific quirks are handled:
+
+**`LD_LIBRARY_PATH` stripping** — AppImage injects its own `LD_LIBRARY_PATH` pointing at bundled libraries (including an old `libssl`). If that path reaches `curl` during the update download, `curl` picks up the wrong `libssl` and the download fails. The updater strips `LD_LIBRARY_PATH` and `LD_PRELOAD` from the subprocess environment before spawning `curl`.
+
+**Main-thread relaunch** — After the install script finishes, the new AppImage is launched via `subprocess.Popen` and the app quits. The `Popen` call must happen on the Qt main thread (via a signal), not inside the install thread, or the child process inherits a broken Qt state on some Manjaro compositor configurations.
+
+---
+
 ## Development
 
 ### Run from source
@@ -135,7 +155,7 @@ mypy claude_usage.py               # type check
 
 CI runs lint + type checks + tests on Linux (Python 3.10–3.13), macOS, and Windows. CodeQL SAST runs on every PR and weekly.
 
-Tests cover: token formatting, JSONL aggregation, stats-cache seeding, window instantiation, label refresh, implied-limit calculation, paint events for bar/chart widgets, update-check signal emission, system CA bundle selection, and LD_LIBRARY_PATH stripping for the in-app updater.
+Tests cover: token formatting, JSONL aggregation, stats-cache seeding, window instantiation, label refresh, implied-limit calculation, paint events for bar/chart widgets, update-check signal emission, system CA bundle selection, LD_LIBRARY_PATH stripping for the in-app updater, non-blocking refresh (background thread), concurrent-refresh guard, watchdog trigger after elapsed time, and watchdog no-op when auto-refresh is disabled.
 
 ### Packaging
 

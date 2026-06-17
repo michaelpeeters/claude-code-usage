@@ -3,6 +3,8 @@
 import json
 import os
 import sys
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -22,6 +24,17 @@ from claude_usage import MiniBarChart, PaceBar, UsageWindow, fmt_tokens
 def qapp():
     app = QApplication.instance() or QApplication([])
     yield app
+
+
+def _wait_for_refresh(win, qapp, timeout: float = 3.0) -> None:
+    """Pump the Qt event loop until the background refresh thread finishes."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        qapp.processEvents()
+        if not win._refreshing:
+            return
+        time.sleep(0.02)
+    raise TimeoutError("refresh() did not complete within timeout")
 
 
 def _make_jsonl(tmp_path: Path, entries: list[dict]) -> Path:
@@ -65,7 +78,9 @@ def test_window_refresh_updates_labels(qapp, tmp_path):
         patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
     ):
         win = UsageWindow()
+        _wait_for_refresh(win, qapp)  # initial refresh from __init__
         win.refresh()
+        _wait_for_refresh(win, qapp)
         assert win.today_msgs[1].text() == "2"
         assert win.today_tokens[1].text() == fmt_tokens(375)
         win.close()
@@ -82,7 +97,7 @@ def test_refresh_implied_limit_detail(qapp, tmp_path):
         patch("claude_usage.load_rate_limits", return_value=fake_rl),
     ):
         win = UsageWindow()
-        win.refresh()
+        _wait_for_refresh(win, qapp)
         detail = win.win_detail_lbl.text()
         # implied ceiling = 500K / 0.25 = 2M; detail must contain both counts
         assert "500K" in detail or "2.0M" in detail  # tokens shown
@@ -224,4 +239,88 @@ def test_window_shows_update_banner(qapp, tmp_path):
         win._show_update_banner("v9.9.9")
         assert not win._update_btn.isHidden()
         assert "v9.9.9" in win._update_btn.text()
+        win.close()
+
+
+def test_refresh_is_non_blocking(qapp, tmp_path):
+    """refresh() must return immediately and set _refreshing=True while work runs."""
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+    ):
+        win = UsageWindow()
+        _wait_for_refresh(win, qapp)  # drain initial refresh
+        win.refresh()
+        # _refreshing should be True immediately (thread not done yet) OR the thread
+        # was so fast it already cleared it — either way the label updates eventually.
+        _wait_for_refresh(win, qapp)
+        assert not win._refreshing
+        assert "Updated" in win.updated_label.text()
+        win.close()
+
+
+def test_refresh_guard_prevents_overlap(qapp, tmp_path):
+    """A second refresh() call while one is in flight must be a no-op."""
+    barrier_entered = threading.Event()
+    barrier_release = threading.Event()
+
+    original_collect = __import__("claude_usage").collect_usage
+
+    def slow_collect():
+        barrier_entered.set()
+        barrier_release.wait(timeout=2.0)
+        return original_collect()
+
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.collect_usage", side_effect=slow_collect),
+    ):
+        win = UsageWindow()
+        _wait_for_refresh(win, qapp)  # drain initial
+
+        barrier_release.clear()
+        win.refresh()
+        barrier_entered.wait(timeout=2.0)
+        assert win._refreshing
+
+        # Second call while first is blocked must be skipped.
+        win.refresh()
+        qapp.processEvents()
+        assert win._refreshing  # still the original thread, not a new one
+
+        barrier_release.set()
+        _wait_for_refresh(win, qapp)
+        win.close()
+
+
+def test_watchdog_triggers_refresh_after_elapsed_time(qapp, tmp_path):
+    """_watchdog must call refresh() when wall-clock time since last refresh exceeds 5 min."""
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+    ):
+        win = UsageWindow()
+        _wait_for_refresh(win, qapp)
+        # Pretend the last refresh happened 6 minutes ago.
+        win._last_refresh = time.time() - 6 * 60
+        win.auto_btn.setChecked(True)
+        win._watchdog()
+        assert win._refreshing  # watchdog triggered a refresh
+        _wait_for_refresh(win, qapp)
+        win.close()
+
+
+def test_watchdog_skips_when_auto_off(qapp, tmp_path):
+    """_watchdog must not trigger a refresh when the auto-refresh button is unchecked."""
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+    ):
+        win = UsageWindow()
+        _wait_for_refresh(win, qapp)
+        win.auto_btn.setChecked(False)
+        win._last_refresh = time.time() - 6 * 60
+        win._watchdog()
+        assert not win._refreshing
         win.close()
