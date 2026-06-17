@@ -37,7 +37,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install Qt system libraries
-        run: sudo apt-get install -y libgl1 libegl1 libxkbcommon-x11-0
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libegl1 libxkbcommon-x11-0
       - name: Install Python dependencies
         run: pip install PyQt6 pytest
       - name: Run tests

@@ -7,12 +7,11 @@ import ssl
 import subprocess
 import sys
 import threading
+import time
 import urllib.request
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-
-import time
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QGuiApplication, QIcon, QPainter, QPen, QPixmap
