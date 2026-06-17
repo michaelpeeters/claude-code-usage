@@ -108,6 +108,10 @@ If the Claude Code statusline script is running it writes live data to `~/.claud
 
 The widget re-reads your usage data every 5 minutes. A watchdog timer (30 s tick) checks elapsed wall-clock time and triggers a refresh immediately after the system wakes from sleep — so the display catches up right away rather than waiting out whatever interval was left on the timer before sleep.
 
+**Around rate-limit resets** the interval tightens: once the `resets_at` timestamp from the statusline cache passes, the watchdog switches to a 60-second poll for the next 15 minutes. This covers the observed real-world lag of 5–10 minutes between the advertised reset time and when the window actually clears on Anthropic's side.
+
+**Stuck-refresh safety net**: if a background collection thread hangs for more than 60 seconds the watchdog force-clears the in-flight flag and shows "Refresh timed out", so the next tick can start a fresh attempt. The worker thread also catches `BaseException` (not just `Exception`) so the flag is cleared even on rare runtime crashes.
+
 Data collection runs in a background thread so the window stays responsive during the scan. Both the 5-hour window scan and the usage aggregation skip JSONL files via `mtime` before opening them — only recently-modified files are read — so refreshes stay fast regardless of how many sessions or how long the session has been running.
 
 ---
