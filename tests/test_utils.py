@@ -187,3 +187,49 @@ def test_collect_usage_cache_seeds_older_days(tmp_path):
 
     assert daily["2026-06-10"]["messages"] == 50
     assert daily["2026-06-10"]["sessions"] == 3  # cache count is resolved into "sessions"
+
+
+def test_collect_5h_window_skips_stale_files(tmp_path):
+    """Files not modified in the last 5 hours are skipped without being opened."""
+    now = datetime.now(timezone.utc)
+    recent = now - timedelta(hours=2)
+
+    jsonl = tmp_path / "proj" / "chat.jsonl"
+    _write_jsonl(jsonl, [_assistant_entry(recent, 100, 50)])
+
+    # Back-date mtime to 6 hours ago so the mtime guard skips the file.
+    stale_ts = (now - timedelta(hours=6)).timestamp()
+    os.utime(jsonl, (stale_ts, stale_ts))
+
+    with patch("claude_usage.PROJECTS_DIR", tmp_path):
+        total = collect_5h_window()
+
+    assert total == 0  # file skipped via mtime, no tokens counted
+
+
+def test_collect_usage_skips_files_before_cache_cutoff(tmp_path):
+    """JSONL files with mtime before the cache cutoff date are not read."""
+    cache_cutoff = "2026-06-14"
+    cache = {
+        "lastComputedDate": cache_cutoff,
+        "dailyActivity": [],
+        "dailyModelTokens": [],
+    }
+    cache_file = tmp_path / "stats-cache.json"
+    cache_file.write_text(json.dumps(cache))
+
+    # A JSONL file for a date before the cutoff, with a matching old mtime.
+    old_ts = datetime(2026, 6, 10, tzinfo=timezone.utc)
+    jsonl = tmp_path / "proj" / "old.jsonl"
+    _write_jsonl(jsonl, [_assistant_entry(old_ts, 500, 500)])
+    stale_mtime = old_ts.timestamp()
+    os.utime(jsonl, (stale_mtime, stale_mtime))
+
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", cache_file),
+    ):
+        daily = collect_usage()
+
+    # Old file skipped; no live overlay for that date.
+    assert daily.get("2026-06-10", {}).get("messages", 0) == 0
