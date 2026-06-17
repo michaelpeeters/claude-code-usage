@@ -152,9 +152,7 @@ def collect_usage() -> dict:
 
     # Overlay with live JSONL data (covers dates after cache cutoff too)
     # Skip files whose mtime predates the cache cutoff — they can't have new data.
-    cutoff_mtime = (
-        datetime.strptime(cache_cutoff, "%Y-%m-%d").timestamp() if cache_cutoff else 0.0
-    )
+    cutoff_mtime = datetime.strptime(cache_cutoff, "%Y-%m-%d").timestamp() if cache_cutoff else 0.0
     seen_sessions: set[str] = set()
     for jsonl_file in sorted(PROJECTS_DIR.glob("*/*.jsonl")):
         if cache_cutoff and jsonl_file.stat().st_mtime < cutoff_mtime:
