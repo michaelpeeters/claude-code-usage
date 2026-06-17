@@ -364,7 +364,9 @@ class UsageWindow(QWidget):
         self._restart_app.connect(self._do_restart)
         self._refresh_done.connect(self._apply_refresh)
         self._refreshing = False
+        self._refresh_started: float = 0.0  # wall-clock time the current refresh began
         self._last_refresh = 0.0  # wall-clock seconds (time.time()), so sleep counts
+        self._next_reset_ts: float = 0.0  # earliest upcoming rate-limit reset
         self.refresh()
         # Watchdog fires every 30s and triggers a refresh if >5 min of wall-clock time
         # have elapsed since the last completed refresh. Because time.time() advances
@@ -448,7 +450,16 @@ class UsageWindow(QWidget):
     def _watchdog(self):
         if not self.auto_btn.isChecked():
             return
-        if time.time() - self._last_refresh >= 5 * 60:
+        now = time.time()
+        # Safety net: if a refresh has been in-flight for >60s, assume the thread hung and unlock.
+        if self._refreshing and self._refresh_started and now - self._refresh_started > 60:
+            self._refreshing = False
+            self.updated_label.setText("Refresh timed out")
+        # Poll every 60s for 15 min after the expected reset (real reset can lag by 5-10 min).
+        # Outside that window, use the normal 5-min interval.
+        reset_lag = now - self._next_reset_ts if self._next_reset_ts else -1
+        interval = 60 if 0 <= reset_lag < 15 * 60 else 5 * 60
+        if now - self._last_refresh >= interval:
             self.refresh()
 
     def _toggle_auto(self):
@@ -655,6 +666,7 @@ class UsageWindow(QWidget):
         if self._refreshing:
             return
         self._refreshing = True
+        self._refresh_started = time.time()
         self.updated_label.setText("Refreshing…")
 
         def _worker():
@@ -663,7 +675,7 @@ class UsageWindow(QWidget):
                 win_tokens = collect_5h_window()
                 rl = load_rate_limits()
                 self._refresh_done.emit(daily, win_tokens, rl)
-            except Exception as e:
+            except BaseException as e:
                 self._refreshing = False
                 self.updated_label.setText(f"Error: {e}")
 
@@ -672,6 +684,14 @@ class UsageWindow(QWidget):
     def _apply_refresh(self, daily: dict, win_tokens: int, rl: dict):
         self._refreshing = False
         self._last_refresh = time.time()
+
+        # Track earliest future reset so watchdog can fire immediately after it passes.
+        now = time.time()
+        resets = [
+            ts for key in ("five_hour", "seven_day")
+            if (ts := rl.get(key, {}).get("resets_at")) and ts > now
+        ]
+        self._next_reset_ts = min(resets) if resets else 0.0
 
         # 5-hour window — prefer real % from statusline cache, fall back to estimate
         fh = rl.get("five_hour", {})
