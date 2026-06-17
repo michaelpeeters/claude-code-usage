@@ -688,8 +688,7 @@ class UsageWindow(QWidget):
         # Track earliest future reset so watchdog can fire immediately after it passes.
         now = time.time()
         resets = [
-            ts for key in ("five_hour", "seven_day")
-            if (ts := rl.get(key, {}).get("resets_at")) and ts > now
+            ts for key in ("five_hour", "seven_day") if (ts := rl.get(key, {}).get("resets_at")) and ts > now
         ]
         self._next_reset_ts = min(resets) if resets else 0.0
 
