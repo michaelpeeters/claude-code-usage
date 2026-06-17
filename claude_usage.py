@@ -89,8 +89,11 @@ def collect_5h_window() -> int:
     """Sum real tokens (input+output) from the last 5 hours across all JSONL files."""
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=5)
+    cutoff_ts = cutoff.timestamp()
     total = 0
     for jsonl_file in PROJECTS_DIR.glob("*/*.jsonl"):
+        if jsonl_file.stat().st_mtime < cutoff_ts:
+            continue
         try:
             with open(jsonl_file) as f:
                 for raw in f:
@@ -148,8 +151,14 @@ def collect_usage() -> dict:
             pass
 
     # Overlay with live JSONL data (covers dates after cache cutoff too)
+    # Skip files whose mtime predates the cache cutoff — they can't have new data.
+    cutoff_mtime = (
+        datetime.strptime(cache_cutoff, "%Y-%m-%d").timestamp() if cache_cutoff else 0.0
+    )
     seen_sessions: set[str] = set()
     for jsonl_file in sorted(PROJECTS_DIR.glob("*/*.jsonl")):
+        if cache_cutoff and jsonl_file.stat().st_mtime < cutoff_mtime:
+            continue
         try:
             with open(jsonl_file) as f:
                 for raw in f:
