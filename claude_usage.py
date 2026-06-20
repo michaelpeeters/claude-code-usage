@@ -577,7 +577,7 @@ class UsageWindow(QWidget):
 
         # ── week ─────────────────────────────────────────────────────────
         week_hdr = QHBoxLayout()
-        week_lbl = QLabel("LAST 7 DAYS")
+        week_lbl = QLabel("CURRENT WEEK")
         week_lbl.setStyleSheet(f"color: {FG2}; font-size: 10px; font-weight: bold; letter-spacing: 1px;")
         week_hdr.addWidget(week_lbl)
         week_hdr.addStretch()

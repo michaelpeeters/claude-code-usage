@@ -11,7 +11,7 @@ A lightweight PyQt6 desktop widget that shows your [Claude Code](https://claude.
 **What it shows:**
 - Today's messages, tokens, and sessions
 - Rolling 5-hour window gauge with implied token ceiling and inferred plan (~Pro / ~Max 5x / ~Max 20x)
-- 7-day bar chart and totals
+- Current-week bar chart and totals (fixed window, resets on Anthropic's schedule — not a rolling 7-day count)
 - Per-model token breakdown (Sonnet / Opus / Haiku)
 - Real rate-limit percentages when the Claude Code statusline script is running
 - In-app one-click update when a newer version is available (auto-restarts)
