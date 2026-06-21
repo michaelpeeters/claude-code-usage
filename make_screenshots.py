@@ -53,7 +53,7 @@ LIVE_CONTEXTS_SAMPLE = [
     {"project": "my-app", "model": "Sonnet", "used": 176_000, "limit": 200_000, "pct": 88.0},
 ]
 
-_ALL_COLLAPSED = {"context": False, "usage": True, "models": True}
+_ALL_COLLAPSED = {}  # all sections default to collapsed on first startup
 
 SCENARIOS = [
     # (filename, daily, win_tokens, rl, live_contexts, collapsed)
@@ -67,7 +67,7 @@ SCENARIOS = [
             "seven_day": {"used_percentage": 43.0, "resets_at": NEXT_WEEK_RESET},
         },
         LIVE_CONTEXTS_SAMPLE,
-        _ALL_COLLAPSED,
+        {"context": False},  # expand live context only
     ),
     # Everything collapsed — minimal footprint
     (

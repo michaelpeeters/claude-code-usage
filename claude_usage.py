@@ -571,7 +571,12 @@ class UsageWindow(QWidget):
         return btn
 
     def _build_ui(self):
-        self._collapsed: dict[str, bool] = _load_settings().get("collapsed", {})
+        _saved = _load_settings().get("collapsed", {})
+        self._collapsed: dict[str, bool] = {
+            "context": _saved.get("context", True),
+            "usage": _saved.get("usage", True),
+            "models": _saved.get("models", True),
+        }
         self.setStyleSheet(f"""
             QWidget {{ background: {BG}; color: {FG};
                        font-family: 'Noto Sans', sans-serif; font-size: 12px; }}

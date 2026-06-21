@@ -402,21 +402,23 @@ def test_section_collapse_and_persist(qapp, tmp_path):
         patch("claude_usage.SETTINGS_CACHE", settings_file),
     ):
         win = UsageWindow()
-        # Default: both sections expanded (not explicitly hidden)
-        assert not win._ctx_container.isHidden()
-        assert not win._models_container.isHidden()
-
-        # Toggle context section collapsed
-        win._ctx_hdr_btn.click()
+        # Default on first startup: all sections collapsed
         assert win._ctx_container.isHidden()
+        assert win._usage_container.isHidden()
+        assert win._models_container.isHidden()
+
+        # Toggle context section expanded
+        win._ctx_hdr_btn.click()
+        assert not win._ctx_container.isHidden()
         assert settings_file.exists()
         saved = json.loads(settings_file.read_text())
-        assert saved["collapsed"]["context"] is True
+        assert saved["collapsed"]["context"] is False
 
-        # New window reads persisted state
+        # New window reads persisted state: context expanded, others still collapsed
         win2 = UsageWindow()
-        assert win2._ctx_container.isHidden()
-        assert not win2._models_container.isHidden()
+        assert not win2._ctx_container.isHidden()
+        assert win2._usage_container.isHidden()
+        assert win2._models_container.isHidden()
 
         win.close()
         win2.close()
