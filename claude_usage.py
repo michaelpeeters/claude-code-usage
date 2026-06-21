@@ -954,6 +954,7 @@ class UsageWindow(QWidget):
             row.addWidget(val)
             self.model_box.addWidget(row_w)
 
+        self.adjustSize()
         self.updated_label.setText(f"Updated {datetime.now().strftime('%H:%M:%S')}")
 
     def closeEvent(self, event):
