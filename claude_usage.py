@@ -899,6 +899,7 @@ class UsageWindow(QWidget):
             if item is not None:
                 w = item.widget()
                 if w is not None:
+                    w.hide()
                     w.deleteLater()
         if self._live_contexts:
             for ctx in self._live_contexts:
@@ -936,10 +937,13 @@ class UsageWindow(QWidget):
             if item is not None:
                 w = item.widget()
                 if w is not None:
+                    w.hide()
                     w.deleteLater()
         for model, toks in sorted(week_models.items(), key=lambda x: -x[1]):
-            row = QHBoxLayout()
+            row_w = QWidget()
+            row = QHBoxLayout(row_w)
             row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(0)
             lbl = QLabel(model)
             lbl.setStyleSheet(f"color: {FG2};")
             val = QLabel(fmt_tokens(toks))
@@ -948,7 +952,7 @@ class UsageWindow(QWidget):
             row.addWidget(lbl)
             row.addStretch()
             row.addWidget(val)
-            self.model_box.addLayout(row)
+            self.model_box.addWidget(row_w)
 
         self.updated_label.setText(f"Updated {datetime.now().strftime('%H:%M:%S')}")
 
