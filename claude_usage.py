@@ -899,8 +899,7 @@ class UsageWindow(QWidget):
             if item is not None:
                 w = item.widget()
                 if w is not None:
-                    w.hide()
-                    w.deleteLater()
+                    w.setParent(None)
         if self._live_contexts:
             for ctx in self._live_contexts:
                 ctx_row = QWidget()
@@ -937,8 +936,7 @@ class UsageWindow(QWidget):
             if item is not None:
                 w = item.widget()
                 if w is not None:
-                    w.hide()
-                    w.deleteLater()
+                    w.setParent(None)
         for model, toks in sorted(week_models.items(), key=lambda x: -x[1]):
             row_w = QWidget()
             row = QHBoxLayout(row_w)
@@ -955,6 +953,7 @@ class UsageWindow(QWidget):
             self.model_box.addWidget(row_w)
 
         self.adjustSize()
+        self.update()
         self.updated_label.setText(f"Updated {datetime.now().strftime('%H:%M:%S')}")
 
     def closeEvent(self, event):
