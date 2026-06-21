@@ -15,7 +15,7 @@ A lightweight desktop widget that shows your [Claude Code](https://claude.ai/cod
 - Rolling 5-hour token window with implied ceiling and inferred plan (~Pro / ~Max 5x / ~Max 20x)
 - Current-week bar chart and totals
 - Per-model token breakdown (Sonnet / Opus / Haiku)
-- Exact rate-limit % and reset times (when the [Claude Code statusline](https://github.com/michaelpeeters/claude-code-usage) script is running)
+- Exact rate-limit % and reset times (when the [Claude Code statusline](https://github.com/anthropics/claude-code) script is running)
 - Collapsible sections — state persists across restarts
 
 ---
@@ -58,7 +58,7 @@ powershell -ExecutionPolicy Bypass -c "iwr https://raw.githubusercontent.com/mic
 
 ## Usage tips
 
-**Sections are collapsed by default** — click any header (▸ LIVE CONTEXT, ▸ USAGE, ▸ MODELS) to expand it. Your layout is saved across restarts.
+**Sections** — click any header to expand or collapse (▾ / ▸). Your layout is saved across restarts; sections start collapsed on a fresh install.
 
 **Live context** updates on every refresh (every 5 min, or click ↻). Sessions inactive for more than 30 minutes are not shown. A ⚠ compact soon warning appears when a context reaches ~83% — `/compact` that session before sending a large prompt.
 

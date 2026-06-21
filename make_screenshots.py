@@ -10,8 +10,14 @@ from unittest.mock import patch
 
 from PyQt6.QtWidgets import QApplication
 
+import subprocess
 import claude_usage
-claude_usage.APP_VERSION = "v1.1.0"  # set before importing UsageWindow so version label renders
+# pick up the latest git tag so screenshots always show the current version
+_tag = subprocess.run(
+    ["git", "tag", "--sort=-version:refname"],
+    capture_output=True, text=True,
+).stdout.strip().splitlines()
+claude_usage.APP_VERSION = _tag[0] if _tag else "v?.?.?"  # set before importing UsageWindow so version label renders
 from claude_usage import UsageWindow
 
 # suppress update banner in screenshots
