@@ -17,7 +17,7 @@ from PyQt6.QtCore import QSize
 from PyQt6.QtGui import QPainter, QPixmap
 from PyQt6.QtWidgets import QApplication
 
-from claude_usage import MiniBarChart, PaceBar, UsageWindow, fmt_tokens
+from claude_usage import MiniBarChart, PaceBar, UsageWindow, collect_live_contexts, fmt_tokens
 
 
 @pytest.fixture(scope="module")
@@ -324,3 +324,99 @@ def test_watchdog_skips_when_auto_off(qapp, tmp_path):
         win._watchdog()
         assert not win._refreshing
         win.close()
+
+
+def _live_entry(inp: int, cache_create: int = 0, cache_read: int = 0, model: str = "claude-opus-4-8") -> dict:
+    ts = datetime.now(timezone.utc).isoformat()
+    return {
+        "type": "assistant",
+        "timestamp": ts,
+        "sessionId": "s1",
+        "cwd": "/home/user/myproject",
+        "message": {
+            "model": model,
+            "usage": {
+                "input_tokens": inp,
+                "output_tokens": 1000,
+                "cache_creation_input_tokens": cache_create,
+                "cache_read_input_tokens": cache_read,
+            },
+        },
+    }
+
+
+def test_collect_live_contexts_pct_and_limit(tmp_path):
+    """collect_live_contexts reads the last assistant usage and computes pct against model limit."""
+    jsonl = tmp_path / "myproj" / "session.jsonl"
+    jsonl.parent.mkdir(parents=True)
+    # Opus 4.8 limit = 1_000_000; used = 100k + 50k + 200k = 350k → 35%
+    jsonl.write_text(json.dumps(_live_entry(100_000, cache_create=50_000, cache_read=200_000)) + "\n")
+
+    with patch("claude_usage.PROJECTS_DIR", tmp_path):
+        results = collect_live_contexts()
+
+    assert len(results) == 1
+    r = results[0]
+    assert r["project"] == "myproject"
+    assert r["model"] == "Opus"
+    assert r["used"] == 350_000
+    assert r["limit"] == 1_000_000
+    assert abs(r["pct"] - 35.0) < 0.1
+
+
+def test_collect_live_contexts_ignores_old_files(tmp_path):
+    """Files with mtime older than LIVE_WINDOW_MIN minutes must be ignored."""
+    jsonl = tmp_path / "old" / "session.jsonl"
+    jsonl.parent.mkdir(parents=True)
+    jsonl.write_text(json.dumps(_live_entry(100_000)) + "\n")
+    # Backdate mtime to 2 hours ago
+    old_time = time.time() - 2 * 3600
+    os.utime(jsonl, (old_time, old_time))
+
+    with patch("claude_usage.PROJECTS_DIR", tmp_path):
+        results = collect_live_contexts()
+
+    assert results == []
+
+
+def test_collect_live_contexts_sonnet_limit(tmp_path):
+    """Sonnet sessions use the default 200k context limit."""
+    jsonl = tmp_path / "proj" / "chat.jsonl"
+    jsonl.parent.mkdir(parents=True)
+    jsonl.write_text(json.dumps(_live_entry(100_000, model="claude-sonnet-4-6")) + "\n")
+
+    with patch("claude_usage.PROJECTS_DIR", tmp_path):
+        results = collect_live_contexts()
+
+    assert len(results) == 1
+    assert results[0]["limit"] == 200_000
+    assert abs(results[0]["pct"] - 50.0) < 0.1
+
+
+def test_section_collapse_and_persist(qapp, tmp_path):
+    """Clicking a section header hides its container and persists the state."""
+    settings_file = tmp_path / "settings.json"
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.SETTINGS_CACHE", settings_file),
+    ):
+        win = UsageWindow()
+        # Default: both sections expanded (not explicitly hidden)
+        assert not win._ctx_container.isHidden()
+        assert not win._models_container.isHidden()
+
+        # Toggle context section collapsed
+        win._ctx_hdr_btn.click()
+        assert win._ctx_container.isHidden()
+        assert settings_file.exists()
+        saved = json.loads(settings_file.read_text())
+        assert saved["collapsed"]["context"] is True
+
+        # New window reads persisted state
+        win2 = UsageWindow()
+        assert win2._ctx_container.isHidden()
+        assert not win2._models_container.isHidden()
+
+        win.close()
+        win2.close()

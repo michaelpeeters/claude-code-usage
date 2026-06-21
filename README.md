@@ -5,15 +5,18 @@
 
 A lightweight PyQt6 desktop widget that shows your [Claude Code](https://claude.ai/code) token consumption at a glance — no API key required. Reads the local `~/.claude/` data written by the CLI.
 
-| ![pro low](packaging/screenshot_pro_low.png) | ![max5x medium](packaging/screenshot_max5x_medium.png) | ![max20x high](packaging/screenshot_max20x_high.png) |
-|:---:|:---:|:---:|
+| ![live context](packaging/screenshot_live_context.png) | ![collapsed](packaging/screenshot_collapsed.png) | ![pro low](packaging/screenshot_pro_low.png) | ![max20x high](packaging/screenshot_max20x_high.png) |
+|:---:|:---:|:---:|:---:|
+| Active sessions (compact) | Fully collapsed | Pro plan | Max 20x |
 
 **What it shows:**
+- **Live context window** per active Claude session — see which conversations are nearing auto-compact before sending a large request
 - Today's messages, tokens, and sessions
 - Rolling 5-hour window gauge with implied token ceiling and inferred plan (~Pro / ~Max 5x / ~Max 20x)
 - Current-week bar chart and totals (fixed window, resets on Anthropic's schedule — not a rolling 7-day count)
 - Per-model token breakdown (Sonnet / Opus / Haiku)
 - Real rate-limit percentages when the Claude Code statusline script is running
+- Collapsible sections (Live Context / Usage / Models) — state persists across restarts
 - In-app one-click update when a newer version is available (auto-restarts)
 
 ---

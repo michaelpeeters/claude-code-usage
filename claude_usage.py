@@ -35,6 +35,15 @@ STATS_CACHE = CLAUDE_DIR / "stats-cache.json"
 PROJECTS_DIR = CLAUDE_DIR / "projects"
 RATE_LIMITS_CACHE = CLAUDE_DIR / "rate-limits-cache.json"
 POS_CACHE = CLAUDE_DIR / "claude-usage-pos.json"
+SETTINGS_CACHE = CLAUDE_DIR / "claude-usage-settings.json"
+
+LIVE_WINDOW_MIN = 30  # minutes; sessions with mtime older than this are considered inactive
+
+MODEL_CONTEXT_LIMIT: dict[str, int] = {
+    "claude-opus-4-8": 1_000_000,
+    "claude-opus-4-7": 1_000_000,
+}
+_DEFAULT_CONTEXT_LIMIT = 200_000
 
 ACCENT = "#d97706"  # amber
 BG = "#1a1a1a"
@@ -114,6 +123,62 @@ def collect_5h_window() -> int:
         except Exception:
             continue
     return total
+
+
+def collect_live_contexts() -> list[dict]:
+    """Return live context usage per active Claude session, most-full first."""
+    cutoff = time.time() - LIVE_WINDOW_MIN * 60
+    results = []
+    try:
+        for jsonl_file in PROJECTS_DIR.glob("*/*.jsonl"):
+            try:
+                if jsonl_file.stat().st_mtime < cutoff:
+                    continue
+                with open(jsonl_file, "rb") as fh:
+                    head = fh.read(4096).decode("utf-8", errors="replace")
+                    fh.seek(0, 2)
+                    file_size = fh.tell()
+                    fh.seek(max(4096, file_size - 256 * 1024))
+                    tail = fh.read().decode("utf-8", errors="replace")
+                text = head + "\n" + tail
+                last_usage_entry: dict | None = None
+                cwd = ""
+                for raw in text.splitlines():
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        obj = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if not cwd and obj.get("cwd"):
+                        cwd = obj["cwd"]
+                    if obj.get("type") != "assistant":
+                        continue
+                    if "input_tokens" in obj.get("message", {}).get("usage", {}):
+                        last_usage_entry = obj
+                if last_usage_entry is None:
+                    continue
+                usage = last_usage_entry["message"]["usage"]
+                used = (
+                    usage.get("input_tokens", 0)
+                    + usage.get("cache_creation_input_tokens", 0)
+                    + usage.get("cache_read_input_tokens", 0)
+                )
+                if not cwd and last_usage_entry.get("cwd"):
+                    cwd = last_usage_entry["cwd"]
+                raw_model = last_usage_entry.get("message", {}).get("model", "")
+                model = MODEL_SHORT.get(raw_model, raw_model.split("-")[1] if "-" in raw_model else raw_model)
+                project = os.path.basename(cwd) if cwd else jsonl_file.parts[-2]
+                limit = MODEL_CONTEXT_LIMIT.get(raw_model, _DEFAULT_CONTEXT_LIMIT)
+                pct = used / limit * 100
+                results.append({"project": project, "model": model, "used": used, "limit": limit, "pct": pct})
+            except Exception:
+                continue
+    except Exception:
+        return []
+    results.sort(key=lambda x: -x["pct"])
+    return results[:6]
 
 
 def collect_usage() -> dict:
@@ -367,6 +432,7 @@ class UsageWindow(QWidget):
         self._refresh_started: float = 0.0  # wall-clock time the current refresh began
         self._last_refresh = 0.0  # wall-clock seconds (time.time()), so sleep counts
         self._next_reset_ts: float = 0.0  # earliest upcoming rate-limit reset
+        self._live_contexts: list[dict] = []
         self.refresh()
         # Watchdog fires every 30s and triggers a refresh if >5 min of wall-clock time
         # have elapsed since the last completed refresh. Because time.time() advances
@@ -477,7 +543,35 @@ class UsageWindow(QWidget):
         )
         self.setWindowFlags(flags)
 
+    def _section_header(self, title: str, key: str, container: QWidget) -> QPushButton:
+        """Collapsible section header button; toggles container visibility and persists state."""
+        collapsed = self._collapsed.get(key, False)
+        btn = QPushButton(f"{'▸' if collapsed else '▾'} {title}")
+        btn.setFlat(True)
+        btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none; padding: 0; text-align: left;"
+            f" color: {FG2}; font-size: 10px; font-weight: bold; }}"
+            f" QPushButton:hover {{ color: {FG}; }}"
+        )
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        container.setVisible(not collapsed)
+
+        def _toggle():
+            new_val = not self._collapsed.get(key, False)
+            self._collapsed[key] = new_val
+            btn.setText(f"{'▸' if new_val else '▾'} {title}")
+            container.setVisible(not new_val)
+            self.adjustSize()
+            self.update()
+            s = _load_settings()
+            s.setdefault("collapsed", {})[key] = new_val
+            _save_settings(s)
+
+        btn.clicked.connect(_toggle)
+        return btn
+
     def _build_ui(self):
+        self._collapsed: dict[str, bool] = _load_settings().get("collapsed", {})
         self.setStyleSheet(f"""
             QWidget {{ background: {BG}; color: {FG};
                        font-family: 'Noto Sans', sans-serif; font-size: 12px; }}
@@ -540,12 +634,29 @@ class UsageWindow(QWidget):
         sep.setStyleSheet("color: #333;")
         root.addWidget(sep)
 
-        # ── today ────────────────────────────────────────────────────────
+        # ── live context ─────────────────────────────────────────────────
+        self._ctx_container = QWidget()
+        self.context_box = QVBoxLayout(self._ctx_container)
+        self.context_box.setSpacing(2)
+        self.context_box.setContentsMargins(0, 0, 0, 0)
+        self._ctx_hdr_btn = self._section_header("LIVE CONTEXT", "context", self._ctx_container)
+        root.addWidget(self._ctx_hdr_btn)
+        root.addWidget(self._ctx_container)
+
+        # ── usage (today + 5h + week) ────────────────────────────────────
+        self._usage_container = QWidget()
+        usage_lay = QVBoxLayout(self._usage_container)
+        usage_lay.setContentsMargins(0, 0, 0, 0)
+        usage_lay.setSpacing(6)
+        self._usage_hdr_btn = self._section_header("USAGE", "usage", self._usage_container)
+        root.addWidget(self._usage_hdr_btn)
+        root.addWidget(self._usage_container)
+
         self.today_label = QLabel("TODAY")
         self.today_label.setStyleSheet(
             f"color: {FG2}; font-size: 10px; font-weight: bold; letter-spacing: 1px;"
         )
-        root.addWidget(self.today_label)
+        usage_lay.addWidget(self.today_label)
 
         grid = QHBoxLayout()
         self.today_msgs = self._stat_box("Messages", "—")
@@ -554,7 +665,7 @@ class UsageWindow(QWidget):
         grid.addWidget(self.today_msgs[0])
         grid.addWidget(self.today_tokens[0])
         grid.addWidget(self.today_sessions[0])
-        root.addLayout(grid)
+        usage_lay.addLayout(grid)
 
         # ── 5-hour window ────────────────────────────────────────────────
         win_hdr = QHBoxLayout()
@@ -565,15 +676,15 @@ class UsageWindow(QWidget):
         self.win_pct_lbl = QLabel("—")
         self.win_pct_lbl.setStyleSheet(f"color: {FG2}; font-size: 10px; font-family: monospace;")
         win_hdr.addWidget(self.win_pct_lbl)
-        root.addLayout(win_hdr)
+        usage_lay.addLayout(win_hdr)
 
         self.pace_bar = PaceBar()
-        root.addWidget(self.pace_bar)
+        usage_lay.addWidget(self.pace_bar)
 
         self.win_detail_lbl = QLabel("—")
         self.win_detail_lbl.setStyleSheet(f"color: {FG2}; font-size: 10px;")
         self.win_detail_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-        root.addWidget(self.win_detail_lbl)
+        usage_lay.addWidget(self.win_detail_lbl)
 
         # ── week ─────────────────────────────────────────────────────────
         week_hdr = QHBoxLayout()
@@ -584,18 +695,18 @@ class UsageWindow(QWidget):
         self.week_pct_lbl = QLabel("—")
         self.week_pct_lbl.setStyleSheet(f"color: {FG2}; font-size: 10px; font-family: monospace;")
         week_hdr.addWidget(self.week_pct_lbl)
-        root.addLayout(week_hdr)
+        usage_lay.addLayout(week_hdr)
 
         self.week_pace_bar = PaceBar()
-        root.addWidget(self.week_pace_bar)
+        usage_lay.addWidget(self.week_pace_bar)
 
         self.week_detail_lbl = QLabel("—")
         self.week_detail_lbl.setStyleSheet(f"color: {FG2}; font-size: 10px;")
         self.week_detail_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-        root.addWidget(self.week_detail_lbl)
+        usage_lay.addWidget(self.week_detail_lbl)
 
         self.chart = MiniBarChart()
-        root.addWidget(self.chart)
+        usage_lay.addWidget(self.chart)
 
         grid2 = QHBoxLayout()
         self.week_msgs = self._stat_box("Messages", "—")
@@ -604,16 +715,16 @@ class UsageWindow(QWidget):
         grid2.addWidget(self.week_msgs[0])
         grid2.addWidget(self.week_tokens[0])
         grid2.addWidget(self.week_sessions[0])
-        root.addLayout(grid2)
+        usage_lay.addLayout(grid2)
 
         # ── model breakdown ──────────────────────────────────────────────
-        model_lbl = QLabel("MODELS (7d tokens)")
-        model_lbl.setStyleSheet(f"color: {FG2}; font-size: 10px; font-weight: bold; letter-spacing: 1px;")
-        root.addWidget(model_lbl)
-
-        self.model_box = QVBoxLayout()
-        self.model_box.setSpacing(2)
-        root.addLayout(self.model_box)
+        self._models_container = QWidget()
+        self.model_box = QVBoxLayout(self._models_container)
+        self.model_box.setSpacing(1)
+        self.model_box.setContentsMargins(0, 0, 0, 0)
+        self._models_hdr_btn = self._section_header("MODELS (7d tokens)", "models", self._models_container)
+        root.addWidget(self._models_hdr_btn)
+        root.addWidget(self._models_container)
 
         # ── footer ───────────────────────────────────────────────────────
         self._update_btn = QPushButton()
@@ -674,6 +785,7 @@ class UsageWindow(QWidget):
                 daily = collect_usage()
                 win_tokens = collect_5h_window()
                 rl = load_rate_limits()
+                self._live_contexts = collect_live_contexts()
                 self._refresh_done.emit(daily, win_tokens, rl)
             except BaseException as e:
                 self._refreshing = False
@@ -776,6 +888,43 @@ class UsageWindow(QWidget):
             self.week_detail_lbl.setText(f"{fmt_tokens(w_tokens)} / ~{fmt_tokens(WEEK_ESTIMATE)} est.")
         self.chart.set_data(chart_data)
 
+        # live context
+        while self.context_box.count():
+            item = self.context_box.takeAt(0)
+            if item is not None:
+                w = item.widget()
+                if w is not None:
+                    w.deleteLater()
+        if self._live_contexts:
+            for ctx in self._live_contexts:
+                ctx_row = QWidget()
+                ctx_lay = QVBoxLayout(ctx_row)
+                ctx_lay.setContentsMargins(0, 1, 0, 1)
+                ctx_lay.setSpacing(2)
+                ctx_top = QHBoxLayout()
+                proj_lbl = QLabel(f"{ctx['project']} · {ctx['model']}")
+                proj_lbl.setStyleSheet(f"color: {FG};")
+                pct_num = QLabel(f"{ctx['pct']:.0f}%")
+                pct_num.setStyleSheet(f"color: {FG}; font-family: monospace;")
+                pct_num.setAlignment(Qt.AlignmentFlag.AlignRight)
+                ctx_top.addWidget(proj_lbl)
+                ctx_top.addStretch()
+                ctx_top.addWidget(pct_num)
+                ctx_bar = PaceBar()
+                ctx_bar.set_value(int(ctx["pct"]), 100)
+                ctx_lay.addLayout(ctx_top)
+                ctx_lay.addWidget(ctx_bar)
+                if ctx["pct"] >= 83:
+                    warn = QLabel("⚠ compact soon")
+                    warn.setStyleSheet("color: #ef4444; font-size: 9px;")
+                    warn.setAlignment(Qt.AlignmentFlag.AlignRight)
+                    ctx_lay.addWidget(warn)
+                self.context_box.addWidget(ctx_row)
+        else:
+            no_sess = QLabel("no active sessions")
+            no_sess.setStyleSheet("color: #555; font-size: 10px;")
+            self.context_box.addWidget(no_sess)
+
         # model breakdown
         while self.model_box.count():
             item = self.model_box.takeAt(0)
@@ -785,6 +934,7 @@ class UsageWindow(QWidget):
                     w.deleteLater()
         for model, toks in sorted(week_models.items(), key=lambda x: -x[1]):
             row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
             lbl = QLabel(model)
             lbl.setStyleSheet(f"color: {FG2};")
             val = QLabel(fmt_tokens(toks))
@@ -793,9 +943,7 @@ class UsageWindow(QWidget):
             row.addWidget(lbl)
             row.addStretch()
             row.addWidget(val)
-            w = QWidget()
-            w.setLayout(row)
-            self.model_box.addWidget(w)
+            self.model_box.addLayout(row)
 
         self.updated_label.setText(f"Updated {datetime.now().strftime('%H:%M:%S')}")
 
@@ -822,6 +970,20 @@ def _load_position():
     except Exception:
         pass
     return None
+
+
+def _load_settings() -> dict:
+    try:
+        return json.loads(SETTINGS_CACHE.read_text())
+    except Exception:
+        return {}
+
+
+def _save_settings(settings: dict) -> None:
+    try:
+        SETTINGS_CACHE.write_text(json.dumps(settings))
+    except Exception:
+        pass
 
 
 def main():
