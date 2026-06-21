@@ -5,9 +5,9 @@
 
 A lightweight PyQt6 desktop widget that shows your [Claude Code](https://claude.ai/code) token consumption at a glance — no API key required. Reads the local `~/.claude/` data written by the CLI.
 
-| ![live context](packaging/screenshot_live_context.png) | ![collapsed](packaging/screenshot_collapsed.png) | ![pro low](packaging/screenshot_pro_low.png) | ![max20x high](packaging/screenshot_max20x_high.png) |
-|:---:|:---:|:---:|:---:|
-| Active sessions (compact) | Fully collapsed | Pro plan | Max 20x |
+| ![pro low](packaging/screenshot_pro_low.png) | ![max5x medium](packaging/screenshot_max5x_medium.png) | ![max20x high](packaging/screenshot_max20x_high.png) |
+|:---:|:---:|:---:|
+| Pro — light day | Max 5x — medium day | Max 20x — heavy day (⚠ compact soon) |
 
 **What it shows:**
 - **Live context window** per active Claude session — see which conversations are nearing auto-compact before sending a large request

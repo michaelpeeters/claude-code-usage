@@ -48,40 +48,13 @@ def _daily(token_days: list[int], msgs_per_1k: float = 0.6) -> dict:
     return daily
 
 
-LIVE_CONTEXTS_SAMPLE = [
-    {"project": "opus-project", "model": "Opus", "used": 330_000, "limit": 1_000_000, "pct": 33.0},
-    {"project": "my-app", "model": "Sonnet", "used": 176_000, "limit": 200_000, "pct": 88.0},
-]
+_EXPANDED = {"context": False, "usage": False, "models": False}  # all sections open
 
-_ALL_COLLAPSED = {}  # all sections default to collapsed on first startup
 
 SCENARIOS = [
     # (filename, daily, win_tokens, rl, live_contexts, collapsed)
-    # Live context expanded, usage+models collapsed — compact default view
-    (
-        "screenshot_live_context.png",
-        _daily([1_200_000, 980_000, 1_500_000, 750_000, 1_100_000, 600_000, 420_000]),
-        1_140_000,
-        {
-            "five_hour": {"used_percentage": 38.0, "resets_at": NEXT_5H_RESET},
-            "seven_day": {"used_percentage": 43.0, "resets_at": NEXT_WEEK_RESET},
-        },
-        LIVE_CONTEXTS_SAMPLE,
-        {"context": False},  # expand live context only
-    ),
-    # Everything collapsed — minimal footprint
-    (
-        "screenshot_collapsed.png",
-        _daily([1_200_000, 980_000, 1_500_000, 750_000, 1_100_000, 600_000, 420_000]),
-        1_140_000,
-        {
-            "five_hour": {"used_percentage": 38.0, "resets_at": NEXT_5H_RESET},
-            "seven_day": {"used_percentage": 43.0, "resets_at": NEXT_WEEK_RESET},
-        },
-        LIVE_CONTEXTS_SAMPLE,
-        {"context": True, "usage": True, "models": True},
-    ),
-    # Usage expanded, no active sessions — Pro plan
+
+    # Light day — Pro plan, 3 low-fill contexts
     (
         "screenshot_pro_low.png",
         _daily([180_000, 95_000, 220_000, 310_000, 0, 140_000, 75_000]),
@@ -90,10 +63,32 @@ SCENARIOS = [
             "five_hour": {"used_percentage": 16.0, "resets_at": NEXT_5H_RESET},
             "seven_day": {"used_percentage": 14.0, "resets_at": NEXT_WEEK_RESET},
         },
-        [],
-        {"context": False, "usage": False, "models": True},
+        [
+            {"project": "claude-code-usage", "model": "Sonnet", "used": 24_000, "limit": 200_000, "pct": 12.0},
+            {"project": "radio-etoile", "model": "Sonnet", "used": 16_000, "limit": 200_000, "pct": 8.0},
+            {"project": "notes", "model": "Haiku", "used": 10_000, "limit": 200_000, "pct": 5.0},
+        ],
+        _EXPANDED,
     ),
-    # Usage expanded — Max 20x high usage
+
+    # Medium day — Max 5x, 3 mid-fill contexts
+    (
+        "screenshot_max5x_medium.png",
+        _daily([1_200_000, 980_000, 1_500_000, 750_000, 1_100_000, 600_000, 420_000]),
+        1_140_000,
+        {
+            "five_hour": {"used_percentage": 38.0, "resets_at": NEXT_5H_RESET},
+            "seven_day": {"used_percentage": 43.0, "resets_at": NEXT_WEEK_RESET},
+        },
+        [
+            {"project": "my-project", "model": "Opus", "used": 450_000, "limit": 1_000_000, "pct": 45.0},
+            {"project": "claude-code-usage", "model": "Sonnet", "used": 76_000, "limit": 200_000, "pct": 38.0},
+            {"project": "api-server", "model": "Sonnet", "used": 44_000, "limit": 200_000, "pct": 22.0},
+        ],
+        _EXPANDED,
+    ),
+
+    # Heavy day — Max 20x, 3 contexts including two near auto-compact
     (
         "screenshot_max20x_high.png",
         _daily([4_800_000, 5_200_000, 3_900_000, 6_100_000, 4_400_000, 5_700_000, 2_100_000]),
@@ -102,8 +97,12 @@ SCENARIOS = [
             "five_hour": {"used_percentage": 71.0, "resets_at": NEXT_5H_RESET},
             "seven_day": {"used_percentage": 82.0, "resets_at": NEXT_WEEK_RESET},
         },
-        [],
-        {"context": False, "usage": False, "models": True},
+        [
+            {"project": "backend", "model": "Sonnet", "used": 182_000, "limit": 200_000, "pct": 91.0},
+            {"project": "frontend", "model": "Sonnet", "used": 176_000, "limit": 200_000, "pct": 88.0},
+            {"project": "opus-work", "model": "Opus", "used": 780_000, "limit": 1_000_000, "pct": 78.0},
+        ],
+        _EXPANDED,
     ),
 ]
 
