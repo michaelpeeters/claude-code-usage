@@ -88,7 +88,7 @@ jobs:
         run: ./appimagetool AppDir claude-usage-${{ env.REL_TAG }}-x86_64.AppImage
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: claude-usage-linux
           path: "*.AppImage"
@@ -115,7 +115,7 @@ jobs:
             claude_usage.py
           ditto -c -k --keepParent "dist/Claude Usage.app" \
             "claude-usage-${{ env.REL_TAG }}-macos.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: claude-usage-macos
           path: "*.zip"
@@ -137,7 +137,7 @@ jobs:
         run: (Get-Content claude_usage.py) -replace 'APP_VERSION = .*', 'APP_VERSION = "${{ env.REL_TAG }}"' | Set-Content claude_usage.py
       - name: Bundle
         run: pyinstaller --onefile --windowed --name claude-usage --icon packaging/claude-usage.png claude_usage.py
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: claude-usage-windows
           path: dist/claude-usage.exe
