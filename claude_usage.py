@@ -168,10 +168,10 @@ def collect_live_contexts() -> list[dict]:
                 if not cwd and last_usage_entry.get("cwd"):
                     cwd = last_usage_entry["cwd"]
                 raw_model = last_usage_entry.get("message", {}).get("model", "")
+                if raw_model == "<synthetic>":
+                    continue
                 model = MODEL_SHORT.get(raw_model, raw_model.split("-")[1] if "-" in raw_model else raw_model)
                 project = os.path.basename(cwd) if cwd else jsonl_file.parts[-2]
-                if project == "<synthetic>":
-                    continue
                 limit = MODEL_CONTEXT_LIMIT.get(raw_model, _DEFAULT_CONTEXT_LIMIT)
                 pct = used / limit * 100
                 results.append({"project": project, "model": model, "used": used, "limit": limit, "pct": pct})
