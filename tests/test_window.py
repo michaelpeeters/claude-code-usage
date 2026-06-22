@@ -393,6 +393,18 @@ def test_collect_live_contexts_sonnet_limit(tmp_path):
     assert abs(results[0]["pct"] - 50.0) < 0.1
 
 
+def test_collect_live_contexts_skips_synthetic_model(tmp_path):
+    """Entries with model == '<synthetic>' (login sessions) must be skipped."""
+    jsonl = tmp_path / "proj" / "chat.jsonl"
+    jsonl.parent.mkdir(parents=True)
+    jsonl.write_text(json.dumps(_live_entry(100_000, model="<synthetic>")) + "\n")
+
+    with patch("claude_usage.PROJECTS_DIR", tmp_path):
+        results = collect_live_contexts()
+
+    assert results == []
+
+
 def test_section_collapse_and_persist(qapp, tmp_path):
     """Clicking a section header hides its container and persists the state."""
     settings_file = tmp_path / "settings.json"
