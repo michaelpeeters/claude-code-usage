@@ -1,0 +1,344 @@
+#!/usr/bin/env python3
+"""Claude Code usage stats — CLI/text output, no GUI needed."""
+
+import json
+import os
+import time
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+CLAUDE_DIR = Path.home() / ".claude"
+STATS_CACHE = CLAUDE_DIR / "stats-cache.json"
+PROJECTS_DIR = CLAUDE_DIR / "projects"
+RATE_LIMITS_CACHE = CLAUDE_DIR / "rate-limits-cache.json"
+
+LIVE_WINDOW_MIN = 30
+THROTTLE_ESTIMATE = 1_500_000
+WEEK_ESTIMATE = 7_500_000
+
+MODEL_CONTEXT_LIMIT: dict[str, int] = {
+    "claude-opus-4-8": 1_000_000,
+    "claude-opus-4-7": 1_000_000,
+}
+_DEFAULT_CONTEXT_LIMIT = 200_000
+
+MODEL_SHORT = {
+    "claude-sonnet-4-6": "Sonnet",
+    "claude-opus-4-7": "Opus",
+    "claude-opus-4-8": "Opus",
+    "claude-haiku-4-5-20251001": "Haiku",
+    "claude-haiku-4-5": "Haiku",
+}
+
+
+def _infer_plan(ceiling_5h: int) -> str:
+    if ceiling_5h >= 10_000_000:
+        return "Max 20x"
+    if ceiling_5h >= 3_000_000:
+        return "Max 5x"
+    return "Pro"
+
+
+def fmt_tokens(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.0f}K"
+    return str(n)
+
+
+def load_rate_limits() -> dict:
+    if not RATE_LIMITS_CACHE.exists():
+        return {}
+    try:
+        return json.loads(RATE_LIMITS_CACHE.read_text())
+    except Exception:
+        return {}
+
+
+def collect_5h_window() -> int:
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=5)
+    cutoff_ts = cutoff.timestamp()
+    total = 0
+    for jsonl_file in PROJECTS_DIR.glob("*/*.jsonl"):
+        if jsonl_file.stat().st_mtime < cutoff_ts:
+            continue
+        try:
+            with open(jsonl_file) as f:
+                for raw in f:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    obj = json.loads(raw)
+                    if obj.get("type") != "assistant":
+                        continue
+                    ts = obj.get("timestamp", "")
+                    if not ts:
+                        continue
+                    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    if dt < cutoff:
+                        continue
+                    usage = obj.get("message", {}).get("usage", {})
+                    total += usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+        except Exception:
+            continue
+    return total
+
+
+def collect_live_contexts() -> list[dict]:
+    cutoff = time.time() - LIVE_WINDOW_MIN * 60
+    results = []
+    try:
+        for jsonl_file in PROJECTS_DIR.glob("*/*.jsonl"):
+            try:
+                if jsonl_file.stat().st_mtime < cutoff:
+                    continue
+                with open(jsonl_file, "rb") as fh:
+                    head = fh.read(4096).decode("utf-8", errors="replace")
+                    fh.seek(0, 2)
+                    file_size = fh.tell()
+                    fh.seek(max(4096, file_size - 256 * 1024))
+                    tail = fh.read().decode("utf-8", errors="replace")
+                text = head + "\n" + tail
+                last_usage_entry: dict | None = None
+                cwd = ""
+                for raw in text.splitlines():
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        obj = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if not cwd and obj.get("cwd"):
+                        cwd = obj["cwd"]
+                    if obj.get("type") != "assistant":
+                        continue
+                    if "input_tokens" in obj.get("message", {}).get("usage", {}):
+                        last_usage_entry = obj
+                if last_usage_entry is None:
+                    continue
+                usage = last_usage_entry["message"]["usage"]
+                used = (
+                    usage.get("input_tokens", 0)
+                    + usage.get("cache_creation_input_tokens", 0)
+                    + usage.get("cache_read_input_tokens", 0)
+                )
+                if not cwd and last_usage_entry.get("cwd"):
+                    cwd = last_usage_entry["cwd"]
+                raw_model = last_usage_entry.get("message", {}).get("model", "")
+                if raw_model == "<synthetic>":
+                    continue
+                model = MODEL_SHORT.get(raw_model, raw_model.split("-")[1] if "-" in raw_model else raw_model)
+                project = os.path.basename(cwd) if cwd else jsonl_file.parts[-2]
+                limit = MODEL_CONTEXT_LIMIT.get(raw_model, _DEFAULT_CONTEXT_LIMIT)
+                pct = used / limit * 100
+                results.append({"project": project, "model": model, "used": used, "limit": limit, "pct": pct})
+            except Exception:
+                continue
+    except Exception:
+        return []
+    results.sort(key=lambda x: -x["pct"])
+    return results[:6]
+
+
+def collect_usage() -> dict:
+    daily: dict[str, dict] = defaultdict(
+        lambda: {
+            "messages": 0,
+            "sessions": set(),
+            "tools": 0,
+            "input": 0,
+            "output": 0,
+            "cache_read": 0,
+            "cache_create": 0,
+            "models": defaultdict(int),
+        }
+    )
+
+    cache_cutoff = ""
+    if STATS_CACHE.exists():
+        try:
+            cache = json.loads(STATS_CACHE.read_text())
+            cache_cutoff = cache.get("lastComputedDate", "")
+            for day in cache.get("dailyActivity", []):
+                d = day["date"]
+                daily[d]["messages"] += day.get("messageCount", 0)
+                daily[d]["tools"] += day.get("toolCallCount", 0)
+                daily[d]["sessions_count"] = daily[d].get("sessions_count", 0) + day.get("sessionCount", 0)
+            for day in cache.get("dailyModelTokens", []):
+                d = day["date"]
+                for model, toks in day.get("tokensByModel", {}).items():
+                    daily[d]["models"][MODEL_SHORT.get(model, model)] += toks
+        except Exception:
+            pass
+
+    cutoff_mtime = datetime.strptime(cache_cutoff, "%Y-%m-%d").timestamp() if cache_cutoff else 0.0
+    seen_sessions: set[str] = set()
+    for jsonl_file in sorted(PROJECTS_DIR.glob("*/*.jsonl")):
+        if cache_cutoff and jsonl_file.stat().st_mtime < cutoff_mtime:
+            continue
+        try:
+            with open(jsonl_file) as f:
+                for raw in f:
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    obj = json.loads(raw)
+                    if obj.get("type") != "assistant":
+                        continue
+                    ts = obj.get("timestamp", "")
+                    if not ts:
+                        continue
+                    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    d = dt.strftime("%Y-%m-%d")
+                    today_str = datetime.now().strftime("%Y-%m-%d")
+                    if d <= cache_cutoff and d != today_str:
+                        continue
+                    msg = obj.get("message", {})
+                    usage = msg.get("usage", {})
+                    if not usage:
+                        continue
+                    sid = obj.get("sessionId", "")
+                    daily[d]["messages"] += 1
+                    if sid and sid not in seen_sessions:
+                        seen_sessions.add(sid)
+                        daily[d]["sessions"].add(sid)
+                    inp = usage.get("input_tokens", 0)
+                    out = usage.get("output_tokens", 0)
+                    daily[d]["input"] += inp
+                    daily[d]["output"] += out
+                    daily[d]["cache_read"] += usage.get("cache_read_input_tokens", 0)
+                    daily[d]["cache_create"] += usage.get("cache_creation_input_tokens", 0)
+                    raw_model = msg.get("model", "")
+                    if not raw_model or raw_model.startswith("<"):
+                        continue
+                    model = MODEL_SHORT.get(
+                        raw_model,
+                        raw_model.split("-")[1] if "-" in raw_model else raw_model,
+                    )
+                    daily[d]["models"][model] += inp + out
+        except Exception:
+            continue
+
+    result = {}
+    for d, v in daily.items():
+        sc = len(v["sessions"]) if v["sessions"] else v.get("sessions_count", 0)
+        real_tokens = v["input"] + v["output"]
+        result[d] = {
+            "messages": v["messages"],
+            "sessions": sc,
+            "tools": v["tools"],
+            "tokens": real_tokens,
+            "output": v["output"],
+            "cache_read": v["cache_read"],
+            "models": dict(v["models"]),
+        }
+    return result
+
+
+def _bar(ratio: float, width: int = 20) -> str:
+    filled = int(ratio * width)
+    return "[" + "█" * filled + "░" * (width - filled) + "]"
+
+
+def main():
+    daily = collect_usage()
+    win_tokens = collect_5h_window()
+    live_ctxs = collect_live_contexts()
+    rl = load_rate_limits()
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    days_7 = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
+
+    print("── LIVE CONTEXT ──────────────────────────────")
+    if live_ctxs:
+        for ctx in live_ctxs:
+            bar = _bar(ctx["pct"] / 100)
+            warn = " ⚠ compact soon" if ctx["pct"] >= 83 else ""
+            print(f"  {ctx['project']} · {ctx['model']:6s}  {bar} {ctx['pct']:3.0f}%{warn}")
+    else:
+        print("  no active sessions")
+
+    print()
+    print("── TODAY ─────────────────────────────────────")
+    td = daily.get(today, {})
+    print(f"  Messages : {td.get('messages', 0)}")
+    print(f"  Tokens   : {fmt_tokens(td.get('tokens', 0))}")
+    print(f"  Sessions : {td.get('sessions', 0)}")
+
+    print()
+    print("── 5-HOUR WINDOW ─────────────────────────────")
+    fh = rl.get("five_hour", {})
+    if fh and "used_percentage" in fh:
+        fh_pct = fh["used_percentage"]
+        reset_ts = fh.get("resets_at")
+        reset_str = datetime.fromtimestamp(reset_ts).strftime("resets %H:%M") if reset_ts else ""
+        bar = _bar(fh_pct / 100)
+        if fh_pct > 0 and win_tokens > 0:
+            implied = int(win_tokens / (fh_pct / 100))
+            plan = "~" + _infer_plan(implied)
+            print(f"  {bar} {fh_pct:.0f}%  ({fmt_tokens(win_tokens)} / {fmt_tokens(implied)})  {plan}")
+        else:
+            print(f"  {bar} {fh_pct:.0f}%  ({fmt_tokens(win_tokens)} in last 5h)")
+        if reset_str:
+            print(f"  {reset_str}")
+    else:
+        ratio = min(1.0, win_tokens / THROTTLE_ESTIMATE)
+        bar = _bar(ratio)
+        print(f"  {bar} {ratio * 100:.0f}%  ({fmt_tokens(win_tokens)} / ~{fmt_tokens(THROTTLE_ESTIMATE)} est.)")
+
+    print()
+    print("── CURRENT WEEK ──────────────────────────────")
+    w_msgs = w_tokens = w_sessions = 0
+    week_models: dict[str, int] = defaultdict(int)
+    for d in days_7:
+        v = daily.get(d, {})
+        w_msgs += v.get("messages", 0)
+        w_tokens += v.get("tokens", 0)
+        w_sessions += v.get("sessions", 0)
+        for model, toks in v.get("models", {}).items():
+            week_models[model] += toks
+
+    sd = rl.get("seven_day", {})
+    if sd and "used_percentage" in sd:
+        sd_pct = sd["used_percentage"]
+        reset_ts = sd.get("resets_at")
+        reset_str = datetime.fromtimestamp(reset_ts).strftime("resets %a %H:%M") if reset_ts else ""
+        bar = _bar(sd_pct / 100)
+        if sd_pct > 0 and w_tokens > 0:
+            implied = int(w_tokens / (sd_pct / 100))
+            print(f"  {bar} {sd_pct:.0f}%  ({fmt_tokens(w_tokens)} / {fmt_tokens(implied)})")
+        else:
+            print(f"  {bar} {sd_pct:.0f}%  ({fmt_tokens(w_tokens)} this week)")
+        if reset_str:
+            print(f"  {reset_str}")
+    else:
+        ratio = min(1.0, w_tokens / WEEK_ESTIMATE)
+        bar = _bar(ratio)
+        print(f"  {bar} {ratio * 100:.0f}%  ({fmt_tokens(w_tokens)} / ~{fmt_tokens(WEEK_ESTIMATE)} est.)")
+
+    print(f"  Messages : {w_msgs}  |  Tokens: {fmt_tokens(w_tokens)}  |  Sessions: {w_sessions}")
+
+    print()
+    print("── MODELS (7d) ───────────────────────────────")
+    if week_models:
+        for model, toks in sorted(week_models.items(), key=lambda x: -x[1]):
+            print(f"  {model:10s}  {fmt_tokens(toks):>6}")
+    else:
+        print("  no data")
+
+    print()
+    print("── DAILY (last 7 days) ───────────────────────")
+    for d in days_7:
+        v = daily.get(d, {})
+        toks = v.get("tokens", 0)
+        msgs = v.get("messages", 0)
+        marker = " ← today" if d == today else ""
+        print(f"  {d}  {fmt_tokens(toks):>6}  {msgs:3d} msgs{marker}")
+
+
+if __name__ == "__main__":
+    main()
