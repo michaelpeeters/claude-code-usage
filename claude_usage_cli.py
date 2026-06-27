@@ -20,6 +20,19 @@ WEEK_ESTIMATE = 7_500_000
 # Claude Code auto-compacts before the full context window is consumed.
 # Observed: compaction fires around 90% of the model's stated limit.
 COMPACT_WARN_PCT = 80
+COMPACT_WARN_YELLOW_PCT = 65
+
+_RED = "\033[31m"
+_YELLOW = "\033[33m"
+_RESET = "\033[0m"
+
+
+def _color(pct: float) -> str:
+    if pct >= COMPACT_WARN_PCT:
+        return _RED
+    if pct >= COMPACT_WARN_YELLOW_PCT:
+        return _YELLOW
+    return ""
 
 MODEL_CONTEXT_LIMIT: dict[str, int] = {
     "claude-opus-4-8": 1_000_000,
@@ -369,7 +382,9 @@ def _print_human(r: dict) -> None:
             bar = _bar(c["pct"] / 100)
             warn = "  ⚠ compact soon" if c["compact_soon"] else ""
             used_str = f"{fmt_tokens(c['used'])}/{fmt_tokens(c['limit'])}"
-            print(f"  {c['project']} · {c['model']}  [{bar}] {c['pct']:3.0f}%  {used_str}{warn}")
+            col = _color(c["pct"])
+            reset = _RESET if col else ""
+            print(f"  {c['project']} · {c['model']}  {col}[{bar}] {c['pct']:3.0f}%{reset}  {used_str}{col}{warn}{reset}")
     else:
         print("  no active sessions")
 
@@ -396,7 +411,9 @@ def _print_human(r: dict) -> None:
     )
     print(f"5-Hour Window{est}")
     suffix = f"  ·  {extras}" if extras else ""
-    print(f"  [{bar}] {w['pct']:3.0f}%   {fmt_tokens(w['used'])} / {limit_str}{suffix}")
+    col = _color(w["pct"])
+    reset = _RESET if col else ""
+    print(f"  {col}[{bar}] {w['pct']:3.0f}%{reset}   {fmt_tokens(w['used'])} / {limit_str}{suffix}")
 
     print()
     wk = r["week_7d"]
