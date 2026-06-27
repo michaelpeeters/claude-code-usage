@@ -19,7 +19,7 @@ WEEK_ESTIMATE = 7_500_000
 
 # Claude Code auto-compacts before the full context window is consumed.
 # Observed: compaction fires around 90% of the model's stated limit.
-COMPACT_WARN_PCT = 88
+COMPACT_WARN_PCT = 80
 
 MODEL_CONTEXT_LIMIT: dict[str, int] = {
     "claude-opus-4-8": 1_000_000,

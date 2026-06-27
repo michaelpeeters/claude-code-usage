@@ -39,7 +39,7 @@ SETTINGS_CACHE = CLAUDE_DIR / "claude-usage-settings.json"
 
 LIVE_WINDOW_MIN = 30  # minutes; sessions with mtime older than this are considered inactive
 # Claude Code auto-compacts before the full context window is consumed (~90% observed).
-COMPACT_WARN_PCT = 88
+COMPACT_WARN_PCT = 80
 
 MODEL_CONTEXT_LIMIT: dict[str, int] = {
     "claude-opus-4-8": 1_000_000,

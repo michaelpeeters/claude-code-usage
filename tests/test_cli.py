@@ -154,7 +154,7 @@ def test_build_report_live_context_compact_soon(tmp_path):
     from claude_usage_cli import COMPACT_WARN_PCT
     now = datetime.now(timezone.utc)
     jsonl = tmp_path / "p" / "f.jsonl"
-    # Use tokens that push pct above COMPACT_WARN_PCT (88%)
+    # Use tokens that push pct above COMPACT_WARN_PCT
     inp = int(200_000 * (COMPACT_WARN_PCT + 1) / 100)
     entry = {
         "type": "assistant",
