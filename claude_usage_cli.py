@@ -239,105 +239,178 @@ def collect_usage() -> dict:
     return result
 
 
-def _bar(ratio: float, width: int = 20) -> str:
-    filled = int(ratio * width)
-    return "[" + "█" * filled + "░" * (width - filled) + "]"
-
-
-def main():
-    daily = collect_usage()
-    win_tokens = collect_5h_window()
-    live_ctxs = collect_live_contexts()
-    rl = load_rate_limits()
-
+def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict) -> dict:
+    """Assemble all stats into a plain dict (used by both text and JSON output)."""
     today = datetime.now().strftime("%Y-%m-%d")
     days_7 = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
 
-    print("── LIVE CONTEXT ──────────────────────────────")
-    if live_ctxs:
-        for ctx in live_ctxs:
-            bar = _bar(ctx["pct"] / 100)
-            warn = " ⚠ compact soon" if ctx["pct"] >= 83 else ""
-            print(f"  {ctx['project']} · {ctx['model']:6s}  {bar} {ctx['pct']:3.0f}%{warn}")
-    else:
-        print("  no active sessions")
-
-    print()
-    print("── TODAY ─────────────────────────────────────")
     td = daily.get(today, {})
-    print(f"  Messages : {td.get('messages', 0)}")
-    print(f"  Tokens   : {fmt_tokens(td.get('tokens', 0))}")
-    print(f"  Sessions : {td.get('sessions', 0)}")
+    today_stats = {
+        "date": today,
+        "messages": td.get("messages", 0),
+        "tokens": td.get("tokens", 0),
+        "sessions": td.get("sessions", 0),
+    }
 
-    print()
-    print("── 5-HOUR WINDOW ─────────────────────────────")
     fh = rl.get("five_hour", {})
     if fh and "used_percentage" in fh:
         fh_pct = fh["used_percentage"]
         reset_ts = fh.get("resets_at")
-        reset_str = datetime.fromtimestamp(reset_ts).strftime("resets %H:%M") if reset_ts else ""
-        bar = _bar(fh_pct / 100)
-        if fh_pct > 0 and win_tokens > 0:
-            implied = int(win_tokens / (fh_pct / 100))
-            plan = "~" + _infer_plan(implied)
-            print(f"  {bar} {fh_pct:.0f}%  ({fmt_tokens(win_tokens)} / {fmt_tokens(implied)})  {plan}")
-        else:
-            print(f"  {bar} {fh_pct:.0f}%  ({fmt_tokens(win_tokens)} in last 5h)")
-        if reset_str:
-            print(f"  {reset_str}")
+        implied = int(win_tokens / (fh_pct / 100)) if fh_pct > 0 and win_tokens > 0 else None
+        window_5h = {
+            "pct": round(fh_pct, 1),
+            "used": win_tokens,
+            "limit": implied,
+            "plan": _infer_plan(implied) if implied else None,
+            "resets_at": datetime.fromtimestamp(reset_ts).strftime("%H:%M") if reset_ts else None,
+            "estimated": False,
+        }
     else:
         ratio = min(1.0, win_tokens / THROTTLE_ESTIMATE)
-        bar = _bar(ratio)
-        print(f"  {bar} {ratio * 100:.0f}%  ({fmt_tokens(win_tokens)} / ~{fmt_tokens(THROTTLE_ESTIMATE)} est.)")
+        window_5h = {
+            "pct": round(ratio * 100, 1),
+            "used": win_tokens,
+            "limit": THROTTLE_ESTIMATE,
+            "plan": None,
+            "resets_at": None,
+            "estimated": True,
+        }
 
-    print()
-    print("── CURRENT WEEK ──────────────────────────────")
     w_msgs = w_tokens = w_sessions = 0
     week_models: dict[str, int] = defaultdict(int)
+    daily_rows = []
     for d in days_7:
         v = daily.get(d, {})
-        w_msgs += v.get("messages", 0)
-        w_tokens += v.get("tokens", 0)
-        w_sessions += v.get("sessions", 0)
-        for model, toks in v.get("models", {}).items():
-            week_models[model] += toks
+        toks = v.get("tokens", 0)
+        msgs = v.get("messages", 0)
+        sess = v.get("sessions", 0)
+        w_msgs += msgs
+        w_tokens += toks
+        w_sessions += sess
+        daily_rows.append({"date": d, "tokens": toks, "messages": msgs, "sessions": sess, "today": d == today})
+        for model, t in v.get("models", {}).items():
+            week_models[model] += t
 
     sd = rl.get("seven_day", {})
     if sd and "used_percentage" in sd:
         sd_pct = sd["used_percentage"]
         reset_ts = sd.get("resets_at")
-        reset_str = datetime.fromtimestamp(reset_ts).strftime("resets %a %H:%M") if reset_ts else ""
-        bar = _bar(sd_pct / 100)
-        if sd_pct > 0 and w_tokens > 0:
-            implied = int(w_tokens / (sd_pct / 100))
-            print(f"  {bar} {sd_pct:.0f}%  ({fmt_tokens(w_tokens)} / {fmt_tokens(implied)})")
-        else:
-            print(f"  {bar} {sd_pct:.0f}%  ({fmt_tokens(w_tokens)} this week)")
-        if reset_str:
-            print(f"  {reset_str}")
+        implied_w = int(w_tokens / (sd_pct / 100)) if sd_pct > 0 and w_tokens > 0 else None
+        week_stats = {
+            "pct": round(sd_pct, 1),
+            "used": w_tokens,
+            "limit": implied_w,
+            "messages": w_msgs,
+            "sessions": w_sessions,
+            "resets_at": datetime.fromtimestamp(reset_ts).strftime("%a %H:%M") if reset_ts else None,
+            "estimated": False,
+        }
     else:
         ratio = min(1.0, w_tokens / WEEK_ESTIMATE)
-        bar = _bar(ratio)
-        print(f"  {bar} {ratio * 100:.0f}%  ({fmt_tokens(w_tokens)} / ~{fmt_tokens(WEEK_ESTIMATE)} est.)")
+        week_stats = {
+            "pct": round(ratio * 100, 1),
+            "used": w_tokens,
+            "limit": WEEK_ESTIMATE,
+            "messages": w_msgs,
+            "sessions": w_sessions,
+            "resets_at": None,
+            "estimated": True,
+        }
 
-    print(f"  Messages : {w_msgs}  |  Tokens: {fmt_tokens(w_tokens)}  |  Sessions: {w_sessions}")
+    return {
+        "generated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "live_context": [
+            {
+                "project": c["project"],
+                "model": c["model"],
+                "pct": round(c["pct"], 1),
+                "used": c["used"],
+                "limit": c["limit"],
+                "compact_soon": c["pct"] >= 83,
+            }
+            for c in live_ctxs
+        ],
+        "today": today_stats,
+        "window_5h": window_5h,
+        "week_7d": week_stats,
+        "models_7d": {m: t for m, t in sorted(week_models.items(), key=lambda x: -x[1])},
+        "daily": daily_rows,
+    }
+
+
+def _print_text(r: dict) -> None:
+    def kv(*pairs) -> str:
+        return "  " + "  ".join(f"{k}={v}" for k, v in pairs if v is not None)
+
+    print(f"CLAUDE USAGE  {r['generated_at']}")
 
     print()
-    print("── MODELS (7d) ───────────────────────────────")
-    if week_models:
-        for model, toks in sorted(week_models.items(), key=lambda x: -x[1]):
-            print(f"  {model:10s}  {fmt_tokens(toks):>6}")
+    print("LIVE CONTEXT")
+    if r["live_context"]:
+        for c in r["live_context"]:
+            warn = "  compact_soon=true" if c["compact_soon"] else ""
+            print(f"  project={c['project']}  model={c['model']}  pct={c['pct']:.0f}  used={fmt_tokens(c['used'])}  limit={fmt_tokens(c['limit'])}{warn}")
     else:
-        print("  no data")
+        print("  none")
 
     print()
-    print("── DAILY (last 7 days) ───────────────────────")
-    for d in days_7:
-        v = daily.get(d, {})
-        toks = v.get("tokens", 0)
-        msgs = v.get("messages", 0)
-        marker = " ← today" if d == today else ""
-        print(f"  {d}  {fmt_tokens(toks):>6}  {msgs:3d} msgs{marker}")
+    t = r["today"]
+    print(f"TODAY  date={t['date']}")
+    print(kv(("messages", t["messages"]), ("tokens", fmt_tokens(t["tokens"])), ("tokens_raw", t["tokens"]), ("sessions", t["sessions"])))
+
+    print()
+    w = r["window_5h"]
+    est = "  estimated=true" if w["estimated"] else ""
+    print(f"WINDOW_5H{est}")
+    print(kv(
+        ("pct", f"{w['pct']:.0f}"),
+        ("used", fmt_tokens(w["used"])),
+        ("used_raw", w["used"]),
+        ("limit", fmt_tokens(w["limit"]) if w["limit"] else None),
+        ("plan", w["plan"]),
+        ("resets_at", w["resets_at"]),
+    ))
+
+    print()
+    wk = r["week_7d"]
+    est = "  estimated=true" if wk["estimated"] else ""
+    print(f"WEEK_7D{est}")
+    print(kv(
+        ("pct", f"{wk['pct']:.0f}"),
+        ("used", fmt_tokens(wk["used"])),
+        ("used_raw", wk["used"]),
+        ("limit", fmt_tokens(wk["limit"]) if wk["limit"] else None),
+        ("resets_at", wk["resets_at"]),
+    ))
+    print(kv(("messages", wk["messages"]), ("sessions", wk["sessions"])))
+
+    print()
+    print("MODELS_7D")
+    for model, toks in r["models_7d"].items():
+        print(f"  model={model}  tokens={fmt_tokens(toks)}  tokens_raw={toks}")
+
+    print()
+    print("DAILY")
+    for d in r["daily"]:
+        today_mark = "  today=true" if d["today"] else ""
+        print(f"  date={d['date']}  tokens={fmt_tokens(d['tokens'])}  tokens_raw={d['tokens']}  messages={d['messages']}  sessions={d['sessions']}{today_mark}")
+
+
+def main() -> None:
+    import sys
+    use_json = "--json" in sys.argv
+
+    daily = collect_usage()
+    win_tokens = collect_5h_window()
+    live_ctxs = collect_live_contexts()
+    rl = load_rate_limits()
+
+    report = _build_report(daily, win_tokens, live_ctxs, rl)
+
+    if use_json:
+        print(json.dumps(report, indent=2))
+    else:
+        _print_text(report)
 
 
 if __name__ == "__main__":
