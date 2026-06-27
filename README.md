@@ -68,6 +68,53 @@ powershell -ExecutionPolicy Bypass -c "iwr https://raw.githubusercontent.com/mic
 
 ---
 
+## CLI / text output
+
+`claude_usage_cli.py` prints the same stats as the GUI — no PyQt6 required.
+Useful for piping into AI tools (Claude Code, OpenCode, Hermes) or shell scripts.
+
+```bash
+python claude_usage_cli.py          # human + LLM-readable key=value text
+python claude_usage_cli.py --json   # fully structured JSON
+```
+
+**Sample output:**
+
+```
+CLAUDE USAGE  2026-06-27T16:24:07
+
+LIVE CONTEXT
+  project=claude-code-usage  model=Sonnet  pct=30  used=60K  limit=200K
+  project=proxmox-maintenance  model=Sonnet  pct=28  used=56K  limit=200K
+
+TODAY  date=2026-06-27
+  messages=768  tokens=524K  tokens_raw=523894  sessions=3
+
+WINDOW_5H
+  pct=19  used=366K  used_raw=366339  limit=1.9M  plan=Pro  resets_at=20:00
+
+WEEK_7D
+  pct=15  used=2.3M  used_raw=2298565  limit=15.3M  resets_at=Thu 00:00
+  messages=3418  sessions=21
+
+MODELS_7D
+  model=Sonnet  tokens=1.7M  tokens_raw=1732646
+  model=Opus  tokens=491K  tokens_raw=491499
+  model=Haiku  tokens=74K  tokens_raw=74420
+
+DAILY
+  date=2026-06-21  tokens=1.1M  tokens_raw=1109221  messages=1687  sessions=9
+  date=2026-06-22  tokens=185K  tokens_raw=184704  messages=341  sessions=3
+  ...
+  date=2026-06-27  tokens=524K  tokens_raw=523894  messages=768  sessions=3  today=true
+```
+
+Every stat has a named `key=value` field so any tool can extract it by name.
+Raw token counts (`tokens_raw`, `used_raw`) are included alongside human-formatted values.
+`--json` produces the same data as a single object, ready for `jq` or direct parsing.
+
+---
+
 ## Development
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for build instructions, tests, and architecture notes.
