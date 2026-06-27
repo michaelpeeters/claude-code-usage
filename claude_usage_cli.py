@@ -139,7 +139,11 @@ def collect_live_contexts() -> list[dict]:
                 project = os.path.basename(cwd) if cwd else jsonl_file.parts[-2]
                 limit = MODEL_CONTEXT_LIMIT.get(raw_model, _DEFAULT_CONTEXT_LIMIT)
                 pct = used / limit * 100
-                results.append({"project": project, "model": model, "used": used, "limit": limit, "pct": pct, "compact_soon": pct >= COMPACT_WARN_PCT})
+                results.append({
+                    "project": project, "model": model,
+                    "used": used, "limit": limit, "pct": pct,
+                    "compact_soon": pct >= COMPACT_WARN_PCT,
+                })
             except Exception:
                 continue
     except Exception:
@@ -296,7 +300,9 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
         w_msgs += msgs
         w_tokens += toks
         w_sessions += sess
-        daily_rows.append({"date": d, "tokens": toks, "messages": msgs, "sessions": sess, "today": d == today})
+        daily_rows.append(
+            {"date": d, "tokens": toks, "messages": msgs, "sessions": sess, "today": d == today}
+        )
         for model, t in v.get("models", {}).items():
             week_models[model] += t
 
@@ -356,7 +362,8 @@ def _print_human(r: dict) -> None:
         for c in r["live_context"]:
             bar = _bar(c["pct"] / 100)
             warn = "  ⚠ compact soon" if c["compact_soon"] else ""
-            print(f"  {c['project']} · {c['model']}  [{bar}] {c['pct']:3.0f}%  {fmt_tokens(c['used'])}/{fmt_tokens(c['limit'])}{warn}")
+            used_str = f"{fmt_tokens(c['used'])}/{fmt_tokens(c['limit'])}"
+            print(f"  {c['project']} · {c['model']}  [{bar}] {c['pct']:3.0f}%  {used_str}{warn}")
     else:
         print("  no active sessions")
 
@@ -377,7 +384,8 @@ def _print_human(r: dict) -> None:
         f"resets {w['resets_at']}" if w["resets_at"] else None,
     ]))
     print(f"5-Hour Window{est}")
-    print(f"  [{bar}] {w['pct']:3.0f}%   {fmt_tokens(w['used'])} / {limit_str}" + (f"  ·  {extras}" if extras else ""))
+    suffix = f"  ·  {extras}" if extras else ""
+    print(f"  [{bar}] {w['pct']:3.0f}%   {fmt_tokens(w['used'])} / {limit_str}{suffix}")
 
     print()
     wk = r["week_7d"]
@@ -419,14 +427,21 @@ def _print_text(r: dict) -> None:
     if r["live_context"]:
         for c in r["live_context"]:
             warn = "  compact_soon=true" if c["compact_soon"] else ""
-            print(f"  project={c['project']}  model={c['model']}  pct={c['pct']:.0f}  used={fmt_tokens(c['used'])}  limit={fmt_tokens(c['limit'])}{warn}")
+            line = (
+                f"  project={c['project']}  model={c['model']}  pct={c['pct']:.0f}"
+                f"  used={fmt_tokens(c['used'])}  limit={fmt_tokens(c['limit'])}{warn}"
+            )
+            print(line)
     else:
         print("  none")
 
     print()
     t = r["today"]
     print(f"TODAY  date={t['date']}")
-    print(kv(("messages", t["messages"]), ("tokens", fmt_tokens(t["tokens"])), ("tokens_raw", t["tokens"]), ("sessions", t["sessions"])))
+    print(kv(
+        ("messages", t["messages"]), ("tokens", fmt_tokens(t["tokens"])),
+        ("tokens_raw", t["tokens"]), ("sessions", t["sessions"]),
+    ))
 
     print()
     w = r["window_5h"]
@@ -463,7 +478,10 @@ def _print_text(r: dict) -> None:
     print("DAILY")
     for d in r["daily"]:
         today_mark = "  today=true" if d["today"] else ""
-        print(f"  date={d['date']}  tokens={fmt_tokens(d['tokens'])}  tokens_raw={d['tokens']}  messages={d['messages']}  sessions={d['sessions']}{today_mark}")
+        print(
+            f"  date={d['date']}  tokens={fmt_tokens(d['tokens'])}  tokens_raw={d['tokens']}"
+            f"  messages={d['messages']}  sessions={d['sessions']}{today_mark}"
+        )
 
 
 def main() -> None:

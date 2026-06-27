@@ -2,16 +2,11 @@
 
 import io
 import json
-import os
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-from claude_usage_cli import _build_report, _print_text, fmt_tokens
-
+from claude_usage_cli import _build_report, _print_text
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -62,7 +57,7 @@ def test_build_report_today_stats(tmp_path):
         patch("claude_usage_cli.PROJECTS_DIR", tmp_path),
         patch("claude_usage_cli.STATS_CACHE", tmp_path / "none.json"),
     ):
-        from claude_usage_cli import collect_usage, collect_5h_window, collect_live_contexts, load_rate_limits
+        from claude_usage_cli import collect_5h_window, collect_live_contexts, collect_usage, load_rate_limits
         daily = collect_usage()
         report = _build_report(daily, collect_5h_window(), collect_live_contexts(), load_rate_limits())
 
@@ -97,7 +92,6 @@ def test_build_report_window_5h_estimated():
 
 
 def test_build_report_week_aggregates(tmp_path):
-    now = datetime.now(timezone.utc)
     days = [(datetime.now(timezone.utc) - timedelta(days=i)) for i in range(7)]
     jsonl = tmp_path / "p" / "f.jsonl"
     _write_jsonl(jsonl, [_assistant_entry(d, 100, 50, session_id=f"s{i}") for i, d in enumerate(days)])
@@ -106,7 +100,7 @@ def test_build_report_week_aggregates(tmp_path):
         patch("claude_usage_cli.PROJECTS_DIR", tmp_path),
         patch("claude_usage_cli.STATS_CACHE", tmp_path / "none.json"),
     ):
-        from claude_usage_cli import collect_usage, collect_5h_window, collect_live_contexts, load_rate_limits
+        from claude_usage_cli import collect_5h_window, collect_live_contexts, collect_usage, load_rate_limits
         daily = collect_usage()
         report = _build_report(daily, collect_5h_window(), collect_live_contexts(), load_rate_limits())
 
@@ -140,7 +134,7 @@ def test_build_report_models_7d(tmp_path):
         patch("claude_usage_cli.PROJECTS_DIR", tmp_path),
         patch("claude_usage_cli.STATS_CACHE", tmp_path / "none.json"),
     ):
-        from claude_usage_cli import collect_usage, collect_5h_window, collect_live_contexts, load_rate_limits
+        from claude_usage_cli import collect_5h_window, collect_live_contexts, collect_usage, load_rate_limits
         daily = collect_usage()
         report = _build_report(daily, collect_5h_window(), collect_live_contexts(), load_rate_limits())
 
@@ -169,7 +163,7 @@ def test_build_report_live_context_compact_soon(tmp_path):
     _write_jsonl(jsonl, [entry])
 
     with patch("claude_usage_cli.PROJECTS_DIR", tmp_path):
-        from claude_usage_cli import collect_usage, collect_5h_window, collect_live_contexts, load_rate_limits
+        from claude_usage_cli import collect_5h_window, collect_live_contexts, collect_usage, load_rate_limits
         report = _build_report(
             collect_usage(), collect_5h_window(), collect_live_contexts(), load_rate_limits()
         )
@@ -194,8 +188,14 @@ def _minimal_report(**overrides) -> dict:
         "generated_at": "2026-06-27T12:00:00",
         "live_context": [],
         "today": {"date": "2026-06-27", "messages": 10, "tokens": 5000, "sessions": 2},
-        "window_5h": {"pct": 8.0, "used": 100_000, "limit": 1_250_000, "plan": "Pro", "resets_at": "20:00", "estimated": False},
-        "week_7d": {"pct": 12.0, "used": 500_000, "limit": 4_000_000, "resets_at": "Thu 00:00", "messages": 50, "sessions": 5, "estimated": False},
+        "window_5h": {
+            "pct": 8.0, "used": 100_000, "limit": 1_250_000,
+            "plan": "Pro", "resets_at": "20:00", "estimated": False,
+        },
+        "week_7d": {
+            "pct": 12.0, "used": 500_000, "limit": 4_000_000,
+            "resets_at": "Thu 00:00", "messages": 50, "sessions": 5, "estimated": False,
+        },
         "models_7d": {"Sonnet": 400_000, "Opus": 100_000},
         "daily": [{"date": "2026-06-27", "tokens": 5000, "messages": 10, "sessions": 2, "today": True}],
     }
@@ -236,7 +236,8 @@ def test_print_text_estimated_flag():
 
 def test_print_text_live_context_compact_soon():
     r = _minimal_report(live_context=[
-        {"project": "bigproj", "model": "Sonnet", "pct": 89.0, "used": 178_000, "limit": 200_000, "compact_soon": True}
+        {"project": "bigproj", "model": "Sonnet", "pct": 89.0,
+         "used": 178_000, "limit": 200_000, "compact_soon": True},
     ])
     out = _capture(r)
     assert "compact_soon=true" in out
@@ -318,7 +319,7 @@ def test_main_default_is_human(tmp_path, capsys):
 
     captured = capsys.readouterr()
     assert "Claude Usage" in captured.out
-    assert "█" in captured.out  # bars rendered
+    assert "░" in captured.out  # bar characters rendered (filled or empty)
     assert "{" not in captured.out
 
 
@@ -358,7 +359,8 @@ def test_print_human_today_marker():
 
 def test_print_human_compact_soon_warning():
     r = _minimal_report(live_context=[
-        {"project": "big", "model": "Sonnet", "pct": 89.0, "used": 178_000, "limit": 200_000, "compact_soon": True}
+        {"project": "big", "model": "Sonnet", "pct": 89.0,
+         "used": 178_000, "limit": 200_000, "compact_soon": True},
     ])
     out = _capture_human(r)
     assert "compact soon" in out
