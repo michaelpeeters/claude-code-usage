@@ -151,9 +151,11 @@ def test_build_report_models_7d(tmp_path):
 
 
 def test_build_report_live_context_compact_soon(tmp_path):
+    from claude_usage_cli import COMPACT_WARN_PCT
     now = datetime.now(timezone.utc)
     jsonl = tmp_path / "p" / "f.jsonl"
-    # 170k of 200k = 85% → compact_soon
+    # Use tokens that push pct above COMPACT_WARN_PCT (88%)
+    inp = int(200_000 * (COMPACT_WARN_PCT + 1) / 100)
     entry = {
         "type": "assistant",
         "timestamp": now.isoformat(),
@@ -161,7 +163,7 @@ def test_build_report_live_context_compact_soon(tmp_path):
         "cwd": "/home/user/bigproject",
         "message": {
             "model": "claude-sonnet-4-6",
-            "usage": {"input_tokens": 170_000, "output_tokens": 1000},
+            "usage": {"input_tokens": inp, "output_tokens": 1000},
         },
     }
     _write_jsonl(jsonl, [entry])
@@ -234,7 +236,7 @@ def test_print_text_estimated_flag():
 
 def test_print_text_live_context_compact_soon():
     r = _minimal_report(live_context=[
-        {"project": "bigproj", "model": "Sonnet", "pct": 85.0, "used": 170_000, "limit": 200_000, "compact_soon": True}
+        {"project": "bigproj", "model": "Sonnet", "pct": 89.0, "used": 178_000, "limit": 200_000, "compact_soon": True}
     ])
     out = _capture(r)
     assert "compact_soon=true" in out
@@ -288,7 +290,23 @@ def test_main_json_flag_produces_valid_json(tmp_path, capsys):
     assert len(parsed["daily"]) == 7
 
 
-def test_main_text_flag_produces_text(tmp_path, capsys):
+def test_main_text_flag_produces_keyvalue(tmp_path, capsys):
+    from claude_usage_cli import main
+
+    with (
+        patch("claude_usage_cli.PROJECTS_DIR", tmp_path),
+        patch("claude_usage_cli.STATS_CACHE", tmp_path / "none.json"),
+        patch("sys.argv", ["claude_usage_cli.py", "--text"]),
+    ):
+        main()
+
+    captured = capsys.readouterr()
+    assert "CLAUDE USAGE" in captured.out
+    assert "messages=" in captured.out
+    assert "{" not in captured.out
+
+
+def test_main_default_is_human(tmp_path, capsys):
     from claude_usage_cli import main
 
     with (
@@ -299,5 +317,53 @@ def test_main_text_flag_produces_text(tmp_path, capsys):
         main()
 
     captured = capsys.readouterr()
-    assert "CLAUDE USAGE" in captured.out
-    assert "{" not in captured.out  # not JSON
+    assert "Claude Usage" in captured.out
+    assert "█" in captured.out  # bars rendered
+    assert "{" not in captured.out
+
+
+# ---------------------------------------------------------------------------
+# _print_human
+# ---------------------------------------------------------------------------
+
+
+def _capture_human(report: dict) -> str:
+    buf = io.StringIO()
+    from claude_usage_cli import _print_human
+    with patch("builtins.print", lambda *a, **k: buf.write(" ".join(str(x) for x in a) + "\n")):
+        _print_human(report)
+    return buf.getvalue()
+
+
+def test_print_human_contains_bars():
+    out = _capture_human(_minimal_report())
+    assert "█" in out
+
+
+def test_print_human_contains_sections():
+    out = _capture_human(_minimal_report())
+    for section in ("Live Context", "Today", "5-Hour Window", "Week", "Models", "Daily"):
+        assert section in out
+
+
+def test_print_human_today_marker():
+    r = _minimal_report()
+    r["daily"] = [
+        {"date": "2026-06-26", "tokens": 1000, "messages": 5, "sessions": 1, "today": False},
+        {"date": "2026-06-27", "tokens": 5000, "messages": 10, "sessions": 2, "today": True},
+    ]
+    out = _capture_human(r)
+    assert "← today" in out
+
+
+def test_print_human_compact_soon_warning():
+    r = _minimal_report(live_context=[
+        {"project": "big", "model": "Sonnet", "pct": 89.0, "used": 178_000, "limit": 200_000, "compact_soon": True}
+    ])
+    out = _capture_human(r)
+    assert "compact soon" in out
+
+
+def test_print_human_no_live_context():
+    out = _capture_human(_minimal_report(live_context=[]))
+    assert "no active sessions" in out

@@ -38,6 +38,8 @@ POS_CACHE = CLAUDE_DIR / "claude-usage-pos.json"
 SETTINGS_CACHE = CLAUDE_DIR / "claude-usage-settings.json"
 
 LIVE_WINDOW_MIN = 30  # minutes; sessions with mtime older than this are considered inactive
+# Claude Code auto-compacts before the full context window is consumed (~90% observed).
+COMPACT_WARN_PCT = 88
 
 MODEL_CONTEXT_LIMIT: dict[str, int] = {
     "claude-opus-4-8": 1_000_000,
@@ -921,7 +923,7 @@ class UsageWindow(QWidget):
                 ctx_bar.set_value(int(ctx["pct"]), 100)
                 ctx_lay.addLayout(ctx_top)
                 ctx_lay.addWidget(ctx_bar)
-                if ctx["pct"] >= 83:
+                if ctx["pct"] >= COMPACT_WARN_PCT:
                     warn = QLabel("⚠ compact soon")
                     warn.setStyleSheet("color: #ef4444; font-size: 9px;")
                     warn.setAlignment(Qt.AlignmentFlag.AlignRight)

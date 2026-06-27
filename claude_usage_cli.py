@@ -17,6 +17,10 @@ LIVE_WINDOW_MIN = 30
 THROTTLE_ESTIMATE = 1_500_000
 WEEK_ESTIMATE = 7_500_000
 
+# Claude Code auto-compacts before the full context window is consumed.
+# Observed: compaction fires around 90% of the model's stated limit.
+COMPACT_WARN_PCT = 88
+
 MODEL_CONTEXT_LIMIT: dict[str, int] = {
     "claude-opus-4-8": 1_000_000,
     "claude-opus-4-7": 1_000_000,
@@ -135,7 +139,7 @@ def collect_live_contexts() -> list[dict]:
                 project = os.path.basename(cwd) if cwd else jsonl_file.parts[-2]
                 limit = MODEL_CONTEXT_LIMIT.get(raw_model, _DEFAULT_CONTEXT_LIMIT)
                 pct = used / limit * 100
-                results.append({"project": project, "model": model, "used": used, "limit": limit, "pct": pct})
+                results.append({"project": project, "model": model, "used": used, "limit": limit, "pct": pct, "compact_soon": pct >= COMPACT_WARN_PCT})
             except Exception:
                 continue
     except Exception:
@@ -239,6 +243,11 @@ def collect_usage() -> dict:
     return result
 
 
+def _bar(ratio: float, width: int = 20) -> str:
+    filled = max(0, min(width, int(ratio * width)))
+    return "█" * filled + "░" * (width - filled)
+
+
 def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict) -> dict:
     """Assemble all stats into a plain dict (used by both text and JSON output)."""
     today = datetime.now().strftime("%Y-%m-%d")
@@ -326,7 +335,7 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
                 "pct": round(c["pct"], 1),
                 "used": c["used"],
                 "limit": c["limit"],
-                "compact_soon": c["pct"] >= 83,
+                "compact_soon": c["compact_soon"],
             }
             for c in live_ctxs
         ],
@@ -336,6 +345,67 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
         "models_7d": {m: t for m, t in sorted(week_models.items(), key=lambda x: -x[1])},
         "daily": daily_rows,
     }
+
+
+def _print_human(r: dict) -> None:
+    print(f"Claude Usage  {r['generated_at']}")
+
+    print()
+    print("Live Context")
+    if r["live_context"]:
+        for c in r["live_context"]:
+            bar = _bar(c["pct"] / 100)
+            warn = "  ⚠ compact soon" if c["compact_soon"] else ""
+            print(f"  {c['project']} · {c['model']}  [{bar}] {c['pct']:3.0f}%  {fmt_tokens(c['used'])}/{fmt_tokens(c['limit'])}{warn}")
+    else:
+        print("  no active sessions")
+
+    print()
+    t = r["today"]
+    print(f"Today  {t['date']}")
+    print(f"  Messages  {t['messages']}")
+    print(f"  Tokens    {fmt_tokens(t['tokens'])}")
+    print(f"  Sessions  {t['sessions']}")
+
+    print()
+    w = r["window_5h"]
+    est = " (estimated)" if w["estimated"] else ""
+    bar = _bar(w["pct"] / 100)
+    limit_str = fmt_tokens(w["limit"]) if w["limit"] else "?"
+    extras = "  ·  ".join(filter(None, [
+        f"plan ~{w['plan']}" if w["plan"] else None,
+        f"resets {w['resets_at']}" if w["resets_at"] else None,
+    ]))
+    print(f"5-Hour Window{est}")
+    print(f"  [{bar}] {w['pct']:3.0f}%   {fmt_tokens(w['used'])} / {limit_str}" + (f"  ·  {extras}" if extras else ""))
+
+    print()
+    wk = r["week_7d"]
+    est = " (estimated)" if wk["estimated"] else ""
+    bar = _bar(wk["pct"] / 100)
+    limit_str = fmt_tokens(wk["limit"]) if wk["limit"] else "?"
+    reset_str = f"  ·  resets {wk['resets_at']}" if wk["resets_at"] else ""
+    print(f"Week (7 days){est}")
+    print(f"  [{bar}] {wk['pct']:3.0f}%   {fmt_tokens(wk['used'])} / {limit_str}{reset_str}")
+    print(f"  Messages {wk['messages']}  ·  Sessions {wk['sessions']}")
+
+    print()
+    print("Models (7-day tokens)")
+    if r["models_7d"]:
+        max_toks = max(r["models_7d"].values())
+        for model, toks in r["models_7d"].items():
+            bar = _bar(toks / max_toks, width=16)
+            print(f"  {model:<10}  [{bar}]  {fmt_tokens(toks):>6}")
+    else:
+        print("  no data")
+
+    print()
+    print("Daily (last 7 days)")
+    max_toks = max((d["tokens"] for d in r["daily"]), default=1) or 1
+    for d in r["daily"]:
+        bar = _bar(d["tokens"] / max_toks, width=16)
+        today_mark = "  ← today" if d["today"] else ""
+        print(f"  {d['date']}  [{bar}]  {fmt_tokens(d['tokens']):>6}  {d['messages']:4d} msgs{today_mark}")
 
 
 def _print_text(r: dict) -> None:
@@ -398,7 +468,9 @@ def _print_text(r: dict) -> None:
 
 def main() -> None:
     import sys
-    use_json = "--json" in sys.argv
+    args = sys.argv[1:]
+    use_json = "--json" in args
+    use_text = "--text" in args  # LLM-friendly key=value; default is human
 
     daily = collect_usage()
     win_tokens = collect_5h_window()
@@ -409,8 +481,10 @@ def main() -> None:
 
     if use_json:
         print(json.dumps(report, indent=2))
-    else:
+    elif use_text:
         _print_text(report)
+    else:
+        _print_human(report)
 
 
 if __name__ == "__main__":
