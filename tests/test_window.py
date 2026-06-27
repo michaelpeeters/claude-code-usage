@@ -349,7 +349,7 @@ def test_collect_live_contexts_pct_and_limit(tmp_path):
     """collect_live_contexts reads the last assistant usage and computes pct against model limit."""
     jsonl = tmp_path / "myproj" / "session.jsonl"
     jsonl.parent.mkdir(parents=True)
-    # Opus 4.8 limit = 1_000_000; used = 100k + 50k + 200k = 350k → 35%
+    # Opus 4.8 limit = 1_000_000; used = 100k + 50k + 200k + 1k output = 351k → 35.1%
     jsonl.write_text(json.dumps(_live_entry(100_000, cache_create=50_000, cache_read=200_000)) + "\n")
 
     with patch("claude_usage.PROJECTS_DIR", tmp_path):
@@ -359,9 +359,9 @@ def test_collect_live_contexts_pct_and_limit(tmp_path):
     r = results[0]
     assert r["project"] == "myproject"
     assert r["model"] == "Opus"
-    assert r["used"] == 350_000
+    assert r["used"] == 351_000
     assert r["limit"] == 1_000_000
-    assert abs(r["pct"] - 35.0) < 0.1
+    assert abs(r["pct"] - 35.1) < 0.1
 
 
 def test_collect_live_contexts_ignores_old_files(tmp_path):
@@ -390,7 +390,8 @@ def test_collect_live_contexts_sonnet_limit(tmp_path):
 
     assert len(results) == 1
     assert results[0]["limit"] == 200_000
-    assert abs(results[0]["pct"] - 50.0) < 0.1
+    # 100k input + 1k output = 101k / 200k = 50.5%
+    assert abs(results[0]["pct"] - 50.5) < 0.1
 
 
 def test_collect_live_contexts_skips_synthetic_model(tmp_path):

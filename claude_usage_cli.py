@@ -129,6 +129,7 @@ def collect_live_contexts() -> list[dict]:
                     usage.get("input_tokens", 0)
                     + usage.get("cache_creation_input_tokens", 0)
                     + usage.get("cache_read_input_tokens", 0)
+                    + usage.get("output_tokens", 0)
                 )
                 if not cwd and last_usage_entry.get("cwd"):
                     cwd = last_usage_entry["cwd"]
