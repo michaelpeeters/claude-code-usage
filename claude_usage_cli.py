@@ -140,11 +140,16 @@ def collect_live_contexts() -> list[dict]:
                 project = os.path.basename(cwd) if cwd else jsonl_file.parts[-2]
                 limit = MODEL_CONTEXT_LIMIT.get(raw_model, _DEFAULT_CONTEXT_LIMIT)
                 pct = used / limit * 100
-                results.append({
-                    "project": project, "model": model,
-                    "used": used, "limit": limit, "pct": pct,
-                    "compact_soon": pct >= COMPACT_WARN_PCT,
-                })
+                results.append(
+                    {
+                        "project": project,
+                        "model": model,
+                        "used": used,
+                        "limit": limit,
+                        "pct": pct,
+                        "compact_soon": pct >= COMPACT_WARN_PCT,
+                    }
+                )
             except Exception:
                 continue
     except Exception:
@@ -380,10 +385,15 @@ def _print_human(r: dict) -> None:
     est = " (estimated)" if w["estimated"] else ""
     bar = _bar(w["pct"] / 100)
     limit_str = fmt_tokens(w["limit"]) if w["limit"] else "?"
-    extras = "  ·  ".join(filter(None, [
-        f"plan ~{w['plan']}" if w["plan"] else None,
-        f"resets {w['resets_at']}" if w["resets_at"] else None,
-    ]))
+    extras = "  ·  ".join(
+        filter(
+            None,
+            [
+                f"plan ~{w['plan']}" if w["plan"] else None,
+                f"resets {w['resets_at']}" if w["resets_at"] else None,
+            ],
+        )
+    )
     print(f"5-Hour Window{est}")
     suffix = f"  ·  {extras}" if extras else ""
     print(f"  [{bar}] {w['pct']:3.0f}%   {fmt_tokens(w['used'])} / {limit_str}{suffix}")
@@ -439,35 +449,43 @@ def _print_text(r: dict) -> None:
     print()
     t = r["today"]
     print(f"TODAY  date={t['date']}")
-    print(kv(
-        ("messages", t["messages"]), ("tokens", fmt_tokens(t["tokens"])),
-        ("tokens_raw", t["tokens"]), ("sessions", t["sessions"]),
-    ))
+    print(
+        kv(
+            ("messages", t["messages"]),
+            ("tokens", fmt_tokens(t["tokens"])),
+            ("tokens_raw", t["tokens"]),
+            ("sessions", t["sessions"]),
+        )
+    )
 
     print()
     w = r["window_5h"]
     est = "  estimated=true" if w["estimated"] else ""
     print(f"WINDOW_5H{est}")
-    print(kv(
-        ("pct", f"{w['pct']:.0f}"),
-        ("used", fmt_tokens(w["used"])),
-        ("used_raw", w["used"]),
-        ("limit", fmt_tokens(w["limit"]) if w["limit"] else None),
-        ("plan", w["plan"]),
-        ("resets_at", w["resets_at"]),
-    ))
+    print(
+        kv(
+            ("pct", f"{w['pct']:.0f}"),
+            ("used", fmt_tokens(w["used"])),
+            ("used_raw", w["used"]),
+            ("limit", fmt_tokens(w["limit"]) if w["limit"] else None),
+            ("plan", w["plan"]),
+            ("resets_at", w["resets_at"]),
+        )
+    )
 
     print()
     wk = r["week_7d"]
     est = "  estimated=true" if wk["estimated"] else ""
     print(f"WEEK_7D{est}")
-    print(kv(
-        ("pct", f"{wk['pct']:.0f}"),
-        ("used", fmt_tokens(wk["used"])),
-        ("used_raw", wk["used"]),
-        ("limit", fmt_tokens(wk["limit"]) if wk["limit"] else None),
-        ("resets_at", wk["resets_at"]),
-    ))
+    print(
+        kv(
+            ("pct", f"{wk['pct']:.0f}"),
+            ("used", fmt_tokens(wk["used"])),
+            ("used_raw", wk["used"]),
+            ("limit", fmt_tokens(wk["limit"]) if wk["limit"] else None),
+            ("resets_at", wk["resets_at"]),
+        )
+    )
     print(kv(("messages", wk["messages"]), ("sessions", wk["sessions"])))
 
     print()
@@ -487,6 +505,7 @@ def _print_text(r: dict) -> None:
 
 def main() -> None:
     import sys
+
     args = sys.argv[1:]
     use_json = "--json" in args
     use_text = "--text" in args  # LLM-friendly key=value; default is human

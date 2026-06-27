@@ -60,7 +60,7 @@ powershell -ExecutionPolicy Bypass -c "iwr https://raw.githubusercontent.com/mic
 
 **Sections** — click any header to expand or collapse (▾ / ▸). Your layout is saved across restarts; sections start collapsed on a fresh install.
 
-**Live context** updates on every refresh (every 5 min, or click ↻). Sessions inactive for more than 30 minutes are not shown. A ⚠ compact soon warning appears when a context reaches ~83% — `/compact` that session before sending a large prompt.
+**Live context** updates on every refresh (every 5 min, or click ↻). Sessions inactive for more than 30 minutes are not shown. A ⚠ compact soon warning appears when a context reaches ~80% — `/compact` that session before sending a large prompt.
 
 **Auto-refresh** re-reads data every 5 minutes and catches up immediately after the system wakes from sleep. The "Updated" timestamp shows when the last scan ran; counts only change when Claude Code actually writes new data.
 

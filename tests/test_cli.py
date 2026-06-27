@@ -48,16 +48,20 @@ def _write_jsonl(path: Path, entries: list[dict]) -> None:
 def test_build_report_today_stats(tmp_path):
     now = datetime.now(timezone.utc)
     jsonl = tmp_path / "proj" / "chat.jsonl"
-    _write_jsonl(jsonl, [
-        _assistant_entry(now, 200, 100, session_id="a"),
-        _assistant_entry(now, 300, 150, session_id="b"),
-    ])
+    _write_jsonl(
+        jsonl,
+        [
+            _assistant_entry(now, 200, 100, session_id="a"),
+            _assistant_entry(now, 300, 150, session_id="b"),
+        ],
+    )
 
     with (
         patch("claude_usage_cli.PROJECTS_DIR", tmp_path),
         patch("claude_usage_cli.STATS_CACHE", tmp_path / "none.json"),
     ):
         from claude_usage_cli import collect_5h_window, collect_live_contexts, collect_usage, load_rate_limits
+
         daily = collect_usage()
         report = _build_report(daily, collect_5h_window(), collect_live_contexts(), load_rate_limits())
 
@@ -85,6 +89,7 @@ def test_build_report_window_5h_real_data():
 def test_build_report_window_5h_estimated():
     """Without rate-limit data, window falls back to THROTTLE_ESTIMATE."""
     from claude_usage_cli import THROTTLE_ESTIMATE
+
     report = _build_report({}, 300_000, [], {})
     w = report["window_5h"]
     assert w["limit"] == THROTTLE_ESTIMATE
@@ -101,6 +106,7 @@ def test_build_report_week_aggregates(tmp_path):
         patch("claude_usage_cli.STATS_CACHE", tmp_path / "none.json"),
     ):
         from claude_usage_cli import collect_5h_window, collect_live_contexts, collect_usage, load_rate_limits
+
         daily = collect_usage()
         report = _build_report(daily, collect_5h_window(), collect_live_contexts(), load_rate_limits())
 
@@ -125,16 +131,20 @@ def test_build_report_today_marked(tmp_path):
 def test_build_report_models_7d(tmp_path):
     now = datetime.now(timezone.utc)
     jsonl = tmp_path / "p" / "f.jsonl"
-    _write_jsonl(jsonl, [
-        _assistant_entry(now, 1000, 500, model="claude-sonnet-4-6"),
-        _assistant_entry(now, 2000, 1000, model="claude-opus-4-8"),
-    ])
+    _write_jsonl(
+        jsonl,
+        [
+            _assistant_entry(now, 1000, 500, model="claude-sonnet-4-6"),
+            _assistant_entry(now, 2000, 1000, model="claude-opus-4-8"),
+        ],
+    )
 
     with (
         patch("claude_usage_cli.PROJECTS_DIR", tmp_path),
         patch("claude_usage_cli.STATS_CACHE", tmp_path / "none.json"),
     ):
         from claude_usage_cli import collect_5h_window, collect_live_contexts, collect_usage, load_rate_limits
+
         daily = collect_usage()
         report = _build_report(daily, collect_5h_window(), collect_live_contexts(), load_rate_limits())
 
@@ -146,6 +156,7 @@ def test_build_report_models_7d(tmp_path):
 
 def test_build_report_live_context_compact_soon(tmp_path):
     from claude_usage_cli import COMPACT_WARN_PCT
+
     now = datetime.now(timezone.utc)
     jsonl = tmp_path / "p" / "f.jsonl"
     # Use tokens that push pct above COMPACT_WARN_PCT
@@ -164,6 +175,7 @@ def test_build_report_live_context_compact_soon(tmp_path):
 
     with patch("claude_usage_cli.PROJECTS_DIR", tmp_path):
         from claude_usage_cli import collect_5h_window, collect_live_contexts, collect_usage, load_rate_limits
+
         report = _build_report(
             collect_usage(), collect_5h_window(), collect_live_contexts(), load_rate_limits()
         )
@@ -189,12 +201,21 @@ def _minimal_report(**overrides) -> dict:
         "live_context": [],
         "today": {"date": "2026-06-27", "messages": 10, "tokens": 5000, "sessions": 2},
         "window_5h": {
-            "pct": 8.0, "used": 100_000, "limit": 1_250_000,
-            "plan": "Pro", "resets_at": "20:00", "estimated": False,
+            "pct": 8.0,
+            "used": 100_000,
+            "limit": 1_250_000,
+            "plan": "Pro",
+            "resets_at": "20:00",
+            "estimated": False,
         },
         "week_7d": {
-            "pct": 12.0, "used": 500_000, "limit": 4_000_000,
-            "resets_at": "Thu 00:00", "messages": 50, "sessions": 5, "estimated": False,
+            "pct": 12.0,
+            "used": 500_000,
+            "limit": 4_000_000,
+            "resets_at": "Thu 00:00",
+            "messages": 50,
+            "sessions": 5,
+            "estimated": False,
         },
         "models_7d": {"Sonnet": 400_000, "Opus": 100_000},
         "daily": [{"date": "2026-06-27", "tokens": 5000, "messages": 10, "sessions": 2, "today": True}],
@@ -235,10 +256,18 @@ def test_print_text_estimated_flag():
 
 
 def test_print_text_live_context_compact_soon():
-    r = _minimal_report(live_context=[
-        {"project": "bigproj", "model": "Sonnet", "pct": 89.0,
-         "used": 178_000, "limit": 200_000, "compact_soon": True},
-    ])
+    r = _minimal_report(
+        live_context=[
+            {
+                "project": "bigproj",
+                "model": "Sonnet",
+                "pct": 89.0,
+                "used": 178_000,
+                "limit": 200_000,
+                "compact_soon": True,
+            },
+        ]
+    )
     out = _capture(r)
     assert "compact_soon=true" in out
     assert "bigproj" in out
@@ -331,6 +360,7 @@ def test_main_default_is_human(tmp_path, capsys):
 def _capture_human(report: dict) -> str:
     buf = io.StringIO()
     from claude_usage_cli import _print_human
+
     with patch("builtins.print", lambda *a, **k: buf.write(" ".join(str(x) for x in a) + "\n")):
         _print_human(report)
     return buf.getvalue()
@@ -358,10 +388,18 @@ def test_print_human_today_marker():
 
 
 def test_print_human_compact_soon_warning():
-    r = _minimal_report(live_context=[
-        {"project": "big", "model": "Sonnet", "pct": 89.0,
-         "used": 178_000, "limit": 200_000, "compact_soon": True},
-    ])
+    r = _minimal_report(
+        live_context=[
+            {
+                "project": "big",
+                "model": "Sonnet",
+                "pct": 89.0,
+                "used": 178_000,
+                "limit": 200_000,
+                "compact_soon": True,
+            },
+        ]
+    )
     out = _capture_human(r)
     assert "compact soon" in out
 
