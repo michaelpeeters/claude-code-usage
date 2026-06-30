@@ -276,7 +276,8 @@ def collect_usage() -> dict:
     result = {}
     for d, v in daily.items():
         sc = len(v["sessions"]) if v["sessions"] else v.get("sessions_count", 0)
-        real_tokens = v["input"] + v["output"]  # exclude cache reads from headline
+        # For days fully covered by stats-cache, input/output are 0; fall back to model totals.
+        real_tokens = v["input"] + v["output"] or sum(v["models"].values())
         result[d] = {
             "messages": v["messages"],
             "sessions": sc,
