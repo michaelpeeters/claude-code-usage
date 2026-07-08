@@ -37,6 +37,8 @@ def _color(pct: float) -> str:
 MODEL_CONTEXT_LIMIT: dict[str, int] = {
     "claude-opus-4-8": 1_000_000,
     "claude-opus-4-7": 1_000_000,
+    "claude-sonnet-5": 1_000_000,
+    "claude-fable-5": 1_000_000,
 }
 _DEFAULT_CONTEXT_LIMIT = 200_000
 
