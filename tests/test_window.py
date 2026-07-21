@@ -435,3 +435,58 @@ def test_section_collapse_and_persist(qapp, tmp_path):
 
         win.close()
         win2.close()
+
+
+def test_extra_usage_label_hidden_without_data(qapp, tmp_path):
+    """Without extra_usage in the rate-limits cache the label stays hidden."""
+    _make_jsonl(tmp_path, [_entry(1, 100, 50)])
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.load_rate_limits", return_value={}),
+    ):
+        win = UsageWindow()
+        _wait_for_refresh(win, qapp)
+        assert not win.extra_lbl.isVisibleTo(win)
+        win.close()
+
+
+def test_extra_usage_label_shows_credits(qapp, tmp_path):
+    """extra_usage from the statusline cache renders used/limit in dollars (cents in)."""
+    _make_jsonl(tmp_path, [_entry(1, 100, 50)])
+    fake_rl = {
+        "five_hour": {"used_percentage": 10.0, "resets_at": None},
+        "seven_day": {},
+        "extra_usage": {
+            "is_enabled": True,
+            "monthly_limit": 2500,  # cents
+            "used_credits": 321,  # cents
+            "utilization": 12.84,
+        },
+    }
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.load_rate_limits", return_value=fake_rl),
+    ):
+        win = UsageWindow()
+        _wait_for_refresh(win, qapp)
+        assert win.extra_lbl.isVisibleTo(win)
+        assert "$3.21" in win.extra_lbl.text()
+        assert "$25" in win.extra_lbl.text()
+        win.close()
+
+
+def test_week_cost_label_from_transcripts(qapp, tmp_path):
+    """The API-rate cost line reflects local transcript usage."""
+    _make_jsonl(tmp_path, [_entry(1, 1_000_000, 0)])  # sonnet input → $3.00
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.load_rate_limits", return_value={}),
+    ):
+        win = UsageWindow()
+        _wait_for_refresh(win, qapp)
+        assert win.week_cost_lbl.isVisibleTo(win)
+        assert "$3.00" in win.week_cost_lbl.text()
+        win.close()

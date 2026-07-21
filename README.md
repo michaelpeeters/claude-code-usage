@@ -14,9 +14,13 @@ A lightweight desktop widget that shows your [Claude Code](https://claude.ai/cod
 - Today's messages, tokens, and sessions
 - Rolling 5-hour token window with implied ceiling and inferred plan (~Pro / ~Max 5x / ~Max 20x)
 - Current-week bar chart and totals
-- Per-model token breakdown (Sonnet / Opus / Haiku)
+- Per-model token breakdown (Sonnet / Opus / Fable / Haiku)
+- **API-rate cost equivalent** — what this week's usage would bill as [extra-usage credits](https://support.claude.com/en/articles/12429409-extra-usage-for-paid-claude-plans) beyond your plan limits, estimated locally at standard API pricing (incl. cache reads/writes)
+- **Extra-usage credit consumption** ($used / monthly cap) — shown automatically once your Claude Code version exposes `extra_usage` in the statusline payload
 - Exact rate-limit % and reset times (when the [Claude Code statusline](https://github.com/anthropics/claude-code) script is running)
 - Collapsible sections — state persists across restarts
+
+Everything is computed from local `~/.claude` data (transcripts, stats cache, statusline cache) — the app itself never calls any API.
 
 ---
 
@@ -88,14 +92,14 @@ LIVE CONTEXT
   project=proxmox-maintenance  model=Sonnet  pct=28  used=56K  limit=200K
 
 TODAY  date=2026-06-27
-  messages=768  tokens=524K  tokens_raw=523894  sessions=3
+  messages=768  tokens=524K  tokens_raw=523894  sessions=3  api_cost_usd=112.4
 
 WINDOW_5H
   pct=19  used=366K  used_raw=366339  limit=1.9M  plan=Pro  resets_at=20:00
 
 WEEK_7D
   pct=15  used=2.3M  used_raw=2298565  limit=15.3M  resets_at=Thu 00:00
-  messages=3418  sessions=21
+  messages=3418  sessions=21  api_cost_usd=489.1
 
 MODELS_7D
   model=Sonnet  tokens=1.7M  tokens_raw=1732646
@@ -112,6 +116,7 @@ DAILY
 Every stat has a named `key=value` field so any tool can extract it by name.
 Raw token counts (`tokens_raw`, `used_raw`) are included alongside human-formatted values.
 `--json` produces the same data as a single object, ready for `jq` or direct parsing.
+`api_cost_usd` estimates the day/week at standard API pricing — what [extra usage](https://support.claude.com/en/articles/12429409-extra-usage-for-paid-claude-plans) would bill past plan limits. When Claude Code exposes extra-usage credits in the statusline payload, an `EXTRA_USAGE` section (`enabled= used_usd= limit_usd= pct=`) is printed too.
 
 ---
 

@@ -17,7 +17,12 @@ _tag = subprocess.run(
     ["git", "tag", "--sort=-version:refname"],
     capture_output=True, text=True,
 ).stdout.strip().splitlines()
-claude_usage.APP_VERSION = _tag[0] if _tag else "v?.?.?"  # set before importing UsageWindow so version label renders
+# screenshots must show the *next* release version (auto-release bumps patch on push)
+import re
+def _next_patch(tag: str) -> str:
+    m = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", tag)
+    return f"v{m[1]}.{m[2]}.{int(m[3]) + 1}" if m else tag
+claude_usage.APP_VERSION = _next_patch(_tag[0]) if _tag else "v?.?.?"  # set before importing UsageWindow
 from claude_usage import UsageWindow
 
 # suppress update banner in screenshots
@@ -47,6 +52,8 @@ def _daily(token_days: list[int], msgs_per_1k: float = 0.6) -> dict:
             "messages": msgs,
             "tokens": toks,
             "sessions": sessions,
+            # plausible API-rate cost equivalent (~$0.25 per 1K real tokens incl. cache traffic)
+            "cost": toks * 0.00025,
             "models": {"Sonnet": int(toks * 0.75), "Opus": int(toks * 0.20), "Haiku": int(toks * 0.05)},
         }
         if is_today:
@@ -102,6 +109,12 @@ SCENARIOS = [
         {
             "five_hour": {"used_percentage": 71.0, "resets_at": NEXT_5H_RESET},
             "seven_day": {"used_percentage": 82.0, "resets_at": NEXT_WEEK_RESET},
+            "extra_usage": {
+                "is_enabled": True,
+                "monthly_limit": 5000,  # cents → $50
+                "used_credits": 1230,  # cents → $12.30
+                "utilization": 24.6,
+            },
         },
         [
             {"project": "backend", "model": "Sonnet", "used": 182_000, "limit": 200_000, "pct": 91.0},

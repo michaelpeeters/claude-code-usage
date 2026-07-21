@@ -64,11 +64,46 @@ WEEK_ESTIMATE = 7_500_000  # ~5 heavy days
 
 MODEL_SHORT = {
     "claude-sonnet-4-6": "Sonnet",
+    "claude-sonnet-5": "Sonnet",
     "claude-opus-4-7": "Opus",
     "claude-opus-4-8": "Opus",
+    "claude-fable-5": "Fable",
+    "claude-mythos-5": "Mythos",
     "claude-haiku-4-5-20251001": "Haiku",
     "claude-haiku-4-5": "Haiku",
 }
+
+# Standard API pricing in $/MTok (input, output) — the rate "extra usage" credits
+# bill at once plan limits are exhausted. Cache read = 0.1× input, write = 1.25×.
+# Prefix-matched, most-specific first.
+API_PRICING: dict[str, tuple[float, float]] = {
+    "claude-fable": (10.0, 50.0),
+    "claude-mythos": (10.0, 50.0),
+    "claude-opus-4-1": (15.0, 75.0),
+    "claude-opus-4-2": (15.0, 75.0),
+    "claude-opus": (5.0, 25.0),
+    "claude-sonnet": (3.0, 15.0),
+    "claude-haiku": (1.0, 5.0),
+}
+
+
+def estimate_cost(model: str, usage: dict) -> float:
+    """USD cost of one API response at standard rates; 0.0 for unknown models."""
+    for prefix, (pin, pout) in API_PRICING.items():
+        if model.startswith(prefix):
+            break
+    else:
+        return 0.0
+    return (
+        usage.get("input_tokens", 0) * pin
+        + usage.get("cache_read_input_tokens", 0) * pin * 0.1
+        + usage.get("cache_creation_input_tokens", 0) * pin * 1.25
+        + usage.get("output_tokens", 0) * pout
+    ) / 1_000_000
+
+
+def fmt_cost(usd: float) -> str:
+    return f"${usd:,.0f}" if usd >= 100 else f"${usd:.2f}"
 
 
 def _infer_plan(ceiling_5h: int) -> str:
@@ -199,6 +234,7 @@ def collect_usage() -> dict:
             "output": 0,
             "cache_read": 0,
             "cache_create": 0,
+            "cost": 0.0,
             "models": defaultdict(int),
         }
     )
@@ -223,11 +259,15 @@ def collect_usage() -> dict:
             pass
 
     # Overlay with live JSONL data (covers dates after cache cutoff too)
-    # Skip files whose mtime predates the cache cutoff — they can't have new data.
+    # Skip files that predate both the cache cutoff (no new stats) and the 7-day
+    # cost window (no cost contribution) — mtime is the last write, so older
+    # files can't contain entries we still need.
     cutoff_mtime = datetime.strptime(cache_cutoff, "%Y-%m-%d").timestamp() if cache_cutoff else 0.0
+    week_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     seen_sessions: set[str] = set()
     for jsonl_file in sorted(PROJECTS_DIR.glob("*/*.jsonl")):
-        if cache_cutoff and jsonl_file.stat().st_mtime < cutoff_mtime:
+        mtime = jsonl_file.stat().st_mtime
+        if cache_cutoff and mtime < cutoff_mtime and mtime < week_cutoff.timestamp():
             continue
         try:
             with open(jsonl_file) as f:
@@ -243,14 +283,19 @@ def collect_usage() -> dict:
                         continue
                     dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
                     d = dt.strftime("%Y-%m-%d")
+                    msg = obj.get("message", {})
+                    usage = msg.get("usage", {})
+                    if not usage:
+                        continue
+                    raw_model = msg.get("model", "")
+                    # API-rate cost estimate for the whole 7-day window, even for
+                    # days the stats-cache already covers (it has no cache-token split).
+                    if dt >= week_cutoff and raw_model and not raw_model.startswith("<"):
+                        daily[d]["cost"] += estimate_cost(raw_model, usage)
                     # Only overlay dates the cache didn't already cover fully,
                     # OR always include today (cache may be stale intraday)
                     today_str = datetime.now().strftime("%Y-%m-%d")
                     if d <= cache_cutoff and d != today_str:
-                        continue
-                    msg = obj.get("message", {})
-                    usage = msg.get("usage", {})
-                    if not usage:
                         continue
                     sid = obj.get("sessionId", "")
                     daily[d]["messages"] += 1
@@ -263,7 +308,6 @@ def collect_usage() -> dict:
                     daily[d]["output"] += out
                     daily[d]["cache_read"] += usage.get("cache_read_input_tokens", 0)
                     daily[d]["cache_create"] += usage.get("cache_creation_input_tokens", 0)
-                    raw_model = msg.get("model", "")
                     if not raw_model or raw_model.startswith("<"):
                         continue
                     model = MODEL_SHORT.get(
@@ -287,6 +331,7 @@ def collect_usage() -> dict:
             "tokens": real_tokens,
             "output": v["output"],
             "cache_read": v["cache_read"],
+            "cost": v["cost"],
             "models": dict(v["models"]),
         }
     return result
@@ -730,6 +775,23 @@ class UsageWindow(QWidget):
         grid2.addWidget(self.week_sessions[0])
         usage_lay.addLayout(grid2)
 
+        self.week_cost_lbl = QLabel("")
+        self.week_cost_lbl.setStyleSheet(f"color: {FG2}; font-size: 10px;")
+        self.week_cost_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.week_cost_lbl.setToolTip(
+            "Estimated from local transcripts at standard API pricing\n"
+            "(incl. cache reads/writes) — roughly what this usage would\n"
+            "bill as extra-usage credits beyond your plan limits."
+        )
+        self.week_cost_lbl.setVisible(False)
+        usage_lay.addWidget(self.week_cost_lbl)
+
+        self.extra_lbl = QLabel("")
+        self.extra_lbl.setStyleSheet(f"color: {FG2}; font-size: 10px;")
+        self.extra_lbl.setToolTip("Extra-usage credits reported by Claude Code (via statusline cache)")
+        self.extra_lbl.setVisible(False)
+        usage_lay.addWidget(self.extra_lbl)
+
         # ── model breakdown ──────────────────────────────────────────────
         self._models_container = QWidget()
         self.model_box = QVBoxLayout(self._models_container)
@@ -820,7 +882,9 @@ class UsageWindow(QWidget):
         # 5-hour window — prefer real % from statusline cache, fall back to estimate
         fh = rl.get("five_hour", {})
         sd_for_tip = rl.get("seven_day", {})
-        if fh and "used_percentage" in fh:
+        fh_reset_ts = fh.get("resets_at")
+        fh_stale = fh_reset_ts is not None and fh_reset_ts <= now
+        if fh and "used_percentage" in fh and not fh_stale:
             fh_pct = fh["used_percentage"]
             reset_ts = fh.get("resets_at")
             reset_str = datetime.fromtimestamp(reset_ts).strftime("resets %H:%M") if reset_ts else "real data"
@@ -863,6 +927,7 @@ class UsageWindow(QWidget):
 
         # week stats + chart data
         w_msgs = w_tokens = w_sessions = 0
+        w_cost = 0.0
         chart_data = []
         week_models: dict[str, int] = defaultdict(int)
         for d in days_7:
@@ -870,6 +935,7 @@ class UsageWindow(QWidget):
             w_msgs += v.get("messages", 0)
             w_tokens += v.get("tokens", 0)
             w_sessions += v.get("sessions", 0)
+            w_cost += v.get("cost", 0.0)
             chart_data.append((d, v.get("tokens", 0), d == today))
             for model, toks in v.get("models", {}).items():
                 week_models[model] += toks
@@ -900,6 +966,38 @@ class UsageWindow(QWidget):
             self.week_pct_lbl.setText(f"{w_pct}%")
             self.week_detail_lbl.setText(f"{fmt_tokens(w_tokens)} / ~{fmt_tokens(WEEK_ESTIMATE)} est.")
         self.chart.set_data(chart_data)
+
+        # API-rate cost equivalent (what extra usage would bill past plan limits)
+        if w_cost > 0:
+            t_cost = td.get("cost", 0.0)
+            self.week_cost_lbl.setText(f"≈ {fmt_cost(w_cost)} at API rates · today {fmt_cost(t_cost)}")
+            self.week_cost_lbl.setVisible(True)
+        else:
+            self.week_cost_lbl.setVisible(False)
+
+        # Extra-usage credits — shown only when Claude Code exposes them in the
+        # statusline rate_limits payload (passed through by statusline.sh).
+        eu = rl.get("extra_usage")
+        if isinstance(eu, dict) and eu:
+            if eu.get("is_enabled"):
+                used_c = eu.get("used_credits")
+                lim_c = eu.get("monthly_limit")
+                util = eu.get("utilization")
+                if used_c is not None:
+                    lim_str = f" / {fmt_cost(lim_c / 100)}" if lim_c else " / unlimited"
+                    txt = f"Extra usage: {fmt_cost(used_c / 100)}{lim_str}"
+                else:
+                    txt = "Extra usage: on"
+                if util is not None and lim_c:
+                    txt += f" · {util:.0f}%"
+                    color = "#ef4444" if util >= 90 else FG2
+                    self.extra_lbl.setStyleSheet(f"color: {color}; font-size: 10px;")
+            else:
+                txt = "Extra usage: off"
+            self.extra_lbl.setText(txt)
+            self.extra_lbl.setVisible(True)
+        else:
+            self.extra_lbl.setVisible(False)
 
         # live context
         while self.context_box.count():
