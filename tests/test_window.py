@@ -443,11 +443,12 @@ def test_extra_usage_label_hidden_without_data(qapp, tmp_path):
     with (
         patch("claude_usage.PROJECTS_DIR", tmp_path),
         patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.SETTINGS_CACHE", tmp_path / "settings.json"),
         patch("claude_usage.load_rate_limits", return_value={}),
     ):
         win = UsageWindow()
         _wait_for_refresh(win, qapp)
-        assert not win.extra_lbl.isVisibleTo(win)
+        assert win.extra_lbl.isHidden()
         win.close()
 
 
@@ -467,11 +468,12 @@ def test_extra_usage_label_shows_credits(qapp, tmp_path):
     with (
         patch("claude_usage.PROJECTS_DIR", tmp_path),
         patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.SETTINGS_CACHE", tmp_path / "settings.json"),
         patch("claude_usage.load_rate_limits", return_value=fake_rl),
     ):
         win = UsageWindow()
         _wait_for_refresh(win, qapp)
-        assert win.extra_lbl.isVisibleTo(win)
+        assert not win.extra_lbl.isHidden()
         assert "$3.21" in win.extra_lbl.text()
         assert "$25" in win.extra_lbl.text()
         win.close()
@@ -483,10 +485,11 @@ def test_week_cost_label_from_transcripts(qapp, tmp_path):
     with (
         patch("claude_usage.PROJECTS_DIR", tmp_path),
         patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.SETTINGS_CACHE", tmp_path / "settings.json"),
         patch("claude_usage.load_rate_limits", return_value={}),
     ):
         win = UsageWindow()
         _wait_for_refresh(win, qapp)
-        assert win.week_cost_lbl.isVisibleTo(win)
+        assert not win.week_cost_lbl.isHidden()
         assert "$3.00" in win.week_cost_lbl.text()
         win.close()
