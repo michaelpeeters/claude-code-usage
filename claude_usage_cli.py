@@ -44,8 +44,11 @@ _DEFAULT_CONTEXT_LIMIT = 200_000
 
 MODEL_SHORT = {
     "claude-sonnet-4-6": "Sonnet",
+    "claude-sonnet-5": "Sonnet",
     "claude-opus-4-7": "Opus",
     "claude-opus-4-8": "Opus",
+    "claude-fable-5": "Fable",
+    "claude-mythos-5": "Mythos",
     "claude-haiku-4-5-20251001": "Haiku",
     "claude-haiku-4-5": "Haiku",
 }
@@ -65,6 +68,39 @@ def fmt_tokens(n: int) -> str:
     if n >= 1_000:
         return f"{n / 1_000:.0f}K"
     return str(n)
+
+
+# Standard API pricing in $/MTok (input, output) — the rate "extra usage" credits
+# bill at once plan limits are exhausted. Cache read = 0.1× input, write = 1.25×.
+# Prefix-matched, most-specific first.
+API_PRICING: dict[str, tuple[float, float]] = {
+    "claude-fable": (10.0, 50.0),
+    "claude-mythos": (10.0, 50.0),
+    "claude-opus-4-1": (15.0, 75.0),
+    "claude-opus-4-2": (15.0, 75.0),
+    "claude-opus": (5.0, 25.0),
+    "claude-sonnet": (3.0, 15.0),
+    "claude-haiku": (1.0, 5.0),
+}
+
+
+def estimate_cost(model: str, usage: dict) -> float:
+    """USD cost of one API response at standard rates; 0.0 for unknown models."""
+    for prefix, (pin, pout) in API_PRICING.items():
+        if model.startswith(prefix):
+            break
+    else:
+        return 0.0
+    return (
+        usage.get("input_tokens", 0) * pin
+        + usage.get("cache_read_input_tokens", 0) * pin * 0.1
+        + usage.get("cache_creation_input_tokens", 0) * pin * 1.25
+        + usage.get("output_tokens", 0) * pout
+    ) / 1_000_000
+
+
+def fmt_cost(usd: float) -> str:
+    return f"${usd:,.0f}" if usd >= 100 else f"${usd:.2f}"
 
 
 def load_rate_limits() -> dict:
@@ -183,6 +219,7 @@ def collect_usage() -> dict:
             "output": 0,
             "cache_read": 0,
             "cache_create": 0,
+            "cost": 0.0,
             "models": defaultdict(int),
         }
     )
@@ -205,9 +242,11 @@ def collect_usage() -> dict:
             pass
 
     cutoff_mtime = datetime.strptime(cache_cutoff, "%Y-%m-%d").timestamp() if cache_cutoff else 0.0
+    week_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     seen_sessions: set[str] = set()
     for jsonl_file in sorted(PROJECTS_DIR.glob("*/*.jsonl")):
-        if cache_cutoff and jsonl_file.stat().st_mtime < cutoff_mtime:
+        mtime = jsonl_file.stat().st_mtime
+        if cache_cutoff and mtime < cutoff_mtime and mtime < week_cutoff.timestamp():
             continue
         try:
             with open(jsonl_file) as f:
@@ -223,12 +262,15 @@ def collect_usage() -> dict:
                         continue
                     dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
                     d = dt.strftime("%Y-%m-%d")
-                    today_str = datetime.now().strftime("%Y-%m-%d")
-                    if d <= cache_cutoff and d != today_str:
-                        continue
                     msg = obj.get("message", {})
                     usage = msg.get("usage", {})
                     if not usage:
+                        continue
+                    raw_model = msg.get("model", "")
+                    if dt >= week_cutoff and raw_model and not raw_model.startswith("<"):
+                        daily[d]["cost"] += estimate_cost(raw_model, usage)
+                    today_str = datetime.now().strftime("%Y-%m-%d")
+                    if d <= cache_cutoff and d != today_str:
                         continue
                     sid = obj.get("sessionId", "")
                     daily[d]["messages"] += 1
@@ -241,7 +283,6 @@ def collect_usage() -> dict:
                     daily[d]["output"] += out
                     daily[d]["cache_read"] += usage.get("cache_read_input_tokens", 0)
                     daily[d]["cache_create"] += usage.get("cache_creation_input_tokens", 0)
-                    raw_model = msg.get("model", "")
                     if not raw_model or raw_model.startswith("<"):
                         continue
                     model = MODEL_SHORT.get(
@@ -263,6 +304,7 @@ def collect_usage() -> dict:
             "tokens": real_tokens,
             "output": v["output"],
             "cache_read": v["cache_read"],
+            "cost": v["cost"],
             "models": dict(v["models"]),
         }
     return result
@@ -284,6 +326,7 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
         "messages": td.get("messages", 0),
         "tokens": td.get("tokens", 0),
         "sessions": td.get("sessions", 0),
+        "api_cost_usd": round(td.get("cost", 0.0), 2),
     }
 
     fh = rl.get("five_hour", {})
@@ -311,6 +354,7 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
         }
 
     w_msgs = w_tokens = w_sessions = 0
+    w_cost = 0.0
     week_models: dict[str, int] = defaultdict(int)
     daily_rows = []
     for d in days_7:
@@ -321,6 +365,7 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
         w_msgs += msgs
         w_tokens += toks
         w_sessions += sess
+        w_cost += v.get("cost", 0.0)
         daily_rows.append(
             {"date": d, "tokens": toks, "messages": msgs, "sessions": sess, "today": d == today}
         )
@@ -353,8 +398,24 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
             "estimated": True,
         }
 
+    week_stats["api_cost_usd"] = round(w_cost, 2)
+
+    # Extra-usage credits (opt-in pay-per-use beyond plan limits, billed at API
+    # rates). Present only when Claude Code exposes `extra_usage` in the
+    # statusline rate_limits payload; statusline.sh passes it through untouched.
+    extra_usage = None
+    eu = rl.get("extra_usage")
+    if isinstance(eu, dict) and eu:
+        extra_usage = {
+            "enabled": bool(eu.get("is_enabled")),
+            "used_usd": round(eu["used_credits"] / 100, 2) if eu.get("used_credits") is not None else None,
+            "limit_usd": round(eu["monthly_limit"] / 100, 2) if eu.get("monthly_limit") else None,
+            "pct": round(eu["utilization"], 1) if eu.get("utilization") is not None else None,
+        }
+
     return {
         "generated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "extra_usage": extra_usage,
         "live_context": [
             {
                 "project": c["project"],
@@ -396,6 +457,8 @@ def _print_human(r: dict) -> None:
     print(f"  Messages  {t['messages']}")
     print(f"  Tokens    {fmt_tokens(t['tokens'])}")
     print(f"  Sessions  {t['sessions']}")
+    if t.get("api_cost_usd"):
+        print(f"  Cost      ≈ {fmt_cost(t['api_cost_usd'])} at API rates")
 
     print()
     w = r["window_5h"]
@@ -426,6 +489,21 @@ def _print_human(r: dict) -> None:
     print(f"Week (7 days){est}")
     print(f"  [{bar}] {wk['pct']:3.0f}%   {fmt_tokens(wk['used'])} / {limit_str}{reset_str}")
     print(f"  Messages {wk['messages']}  ·  Sessions {wk['sessions']}")
+    if wk.get("api_cost_usd"):
+        print(f"  ≈ {fmt_cost(wk['api_cost_usd'])} at API rates (extra-usage billing equivalent)")
+
+    eu = r.get("extra_usage")
+    if eu:
+        print()
+        print("Extra Usage (usage credits)")
+        if not eu["enabled"]:
+            print("  off")
+        elif eu["used_usd"] is not None:
+            lim = fmt_cost(eu["limit_usd"]) if eu["limit_usd"] else "unlimited"
+            pct = f"  ·  {eu['pct']:.0f}%" if eu["pct"] is not None else ""
+            print(f"  {fmt_cost(eu['used_usd'])} / {lim} this month{pct}")
+        else:
+            print("  on")
 
     print()
     print("Models (7-day tokens)")
@@ -474,6 +552,7 @@ def _print_text(r: dict) -> None:
             ("tokens", fmt_tokens(t["tokens"])),
             ("tokens_raw", t["tokens"]),
             ("sessions", t["sessions"]),
+            ("api_cost_usd", t.get("api_cost_usd")),
         )
     )
 
@@ -505,7 +584,20 @@ def _print_text(r: dict) -> None:
             ("resets_at", wk["resets_at"]),
         )
     )
-    print(kv(("messages", wk["messages"]), ("sessions", wk["sessions"])))
+    print(kv(("messages", wk["messages"]), ("sessions", wk["sessions"]), ("api_cost_usd", wk.get("api_cost_usd"))))
+
+    eu = r.get("extra_usage")
+    if eu:
+        print()
+        print("EXTRA_USAGE")
+        print(
+            kv(
+                ("enabled", str(eu["enabled"]).lower()),
+                ("used_usd", eu["used_usd"]),
+                ("limit_usd", eu["limit_usd"]),
+                ("pct", eu["pct"]),
+            )
+        )
 
     print()
     print("MODELS_7D")

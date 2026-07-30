@@ -233,3 +233,59 @@ def test_collect_usage_skips_files_before_cache_cutoff(tmp_path):
 
     # Old file skipped; no live overlay for that date.
     assert daily.get("2026-06-10", {}).get("messages", 0) == 0
+
+
+# ---------------------------------------------------------------------------
+# estimate_cost / cost aggregation
+# ---------------------------------------------------------------------------
+
+from claude_usage import estimate_cost, fmt_cost  # noqa: E402
+
+
+def test_estimate_cost_sonnet_all_buckets():
+    usage = {
+        "input_tokens": 1_000_000,
+        "output_tokens": 1_000_000,
+        "cache_read_input_tokens": 1_000_000,
+        "cache_creation_input_tokens": 1_000_000,
+    }
+    # sonnet: $3 in, $15 out, cache read 0.1×3, cache write 1.25×3
+    expected = 3.0 + 15.0 + 0.3 + 3.75
+    assert estimate_cost("claude-sonnet-5", usage) == pytest.approx(expected)
+
+
+def test_estimate_cost_unknown_model_is_zero():
+    assert estimate_cost("gpt-oss", {"input_tokens": 1_000_000}) == 0.0
+
+
+def test_estimate_cost_prefix_specificity():
+    usage = {"input_tokens": 1_000_000}
+    assert estimate_cost("claude-opus-4-8", usage) == pytest.approx(5.0)
+    assert estimate_cost("claude-opus-4-1", usage) == pytest.approx(15.0)
+    assert estimate_cost("claude-fable-5", usage) == pytest.approx(10.0)
+
+
+def test_fmt_cost():
+    assert fmt_cost(0.5) == "$0.50"
+    assert fmt_cost(99.994) == "$99.99"
+    assert fmt_cost(1234.0) == "$1,234"
+
+
+def test_collect_usage_accumulates_week_cost(tmp_path):
+    now = datetime.now(timezone.utc)
+    jsonl = tmp_path / "proj" / "chat.jsonl"
+    entry = _assistant_entry(now - timedelta(hours=1), 1_000_000, 0)
+    old_entry = _assistant_entry(now - timedelta(days=10), 1_000_000, 0)
+    _write_jsonl(jsonl, [entry, old_entry])
+
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+    ):
+        daily = collect_usage()
+
+    today = now.strftime("%Y-%m-%d")
+    # sonnet 4.6 input at $3/MTok; the 10-day-old entry is outside the week window
+    assert daily[today]["cost"] == pytest.approx(3.0)
+    total_cost = sum(v.get("cost", 0.0) for v in daily.values())
+    assert total_cost == pytest.approx(3.0)
