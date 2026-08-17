@@ -463,6 +463,7 @@ class PaceBar(QWidget):
 class UsageWindow(QWidget):
     _update_available = pyqtSignal(str)
     _restart_app = pyqtSignal(str)  # emitted from install thread → main thread relaunches
+    _update_failed = pyqtSignal(str)  # emitted from install thread on failure → main thread resets button
     _refresh_done = pyqtSignal(dict, int, dict)  # daily, win_tokens, rate_limits
 
     def __init__(self):
@@ -480,6 +481,7 @@ class UsageWindow(QWidget):
             self._tray.show()
         self._update_available.connect(self._show_update_banner)
         self._restart_app.connect(self._do_restart)
+        self._update_failed.connect(self._on_update_failed)
         self._refresh_done.connect(self._apply_refresh)
         self._refreshing = False
         self._refresh_started: float = 0.0  # wall-clock time the current refresh began
@@ -538,6 +540,10 @@ class UsageWindow(QWidget):
         subprocess.Popen([appimage])
         QApplication.quit()
 
+    def _on_update_failed(self, message: str):
+        self._update_btn.setText(f"Update failed ({message}) — click to retry")
+        self._update_btn.setEnabled(True)
+
     def _trigger_update(self):
         self._update_btn.setText("Downloading update…")
         self._update_btn.setEnabled(False)
@@ -552,17 +558,23 @@ class UsageWindow(QWidget):
                     ["powershell", "-ExecutionPolicy", "Bypass", "-Command", f"irm {raw}/install.ps1 | iex"],
                     creationflags=subprocess.CREATE_NEW_CONSOLE,
                 )
-            elif sys.platform == "darwin":
-                cmd = f"curl -fsSL {raw}/install.sh | bash"
-                subprocess.run(["bash", "-c", cmd], check=False, env=clean_env)
+                return
+            # -o pipefail so a failed curl (e.g. GitHub rate-limiting raw.githubusercontent.com)
+            # makes the whole pipeline fail instead of silently piping nothing into bash.
+            cmd = f"curl -fsSL {raw}/install.sh | bash"
+            result = subprocess.run(
+                ["bash", "-o", "pipefail", "-c", cmd], check=False, env=clean_env, capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "").strip().splitlines()
+                self._update_failed.emit(detail[-1] if detail else f"exit {result.returncode}")
+                return
+            if sys.platform == "darwin":
                 subprocess.Popen(["open", "-a", "Claude Usage"])
                 QApplication.quit()
-            else:
-                cmd = f"curl -fsSL {raw}/install.sh | bash"
-                subprocess.run(["bash", "-c", cmd], check=False, env=clean_env)
-                if appimage:
-                    # Emit signal so the main thread launches the new binary and quits.
-                    self._restart_app.emit(appimage)
+            elif appimage:
+                # Emit signal so the main thread launches the new binary and quits.
+                self._restart_app.emit(appimage)
 
         threading.Thread(target=_install, daemon=False).start()
 

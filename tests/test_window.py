@@ -228,6 +228,33 @@ def test_trigger_update_strips_ld_library_path(qapp, tmp_path):
     win.close()
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="install-pipeline failure handling is Linux-specific")
+def test_trigger_update_shows_error_on_curl_failure(qapp, tmp_path):
+    """If the install pipeline fails (e.g. GitHub rate-limits raw.githubusercontent.com),
+    the button must surface an error and re-enable instead of silently hanging forever."""
+    from unittest.mock import MagicMock
+
+    def fake_run(args, **kwargs):
+        return MagicMock(returncode=22, stdout="", stderr="curl: (22) The requested URL returned error: 429\n")
+
+    with (
+        patch("claude_usage.PROJECTS_DIR", tmp_path),
+        patch("claude_usage.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage.os.environ", {**os.environ, "APPIMAGE": ""}),
+        patch("claude_usage.subprocess.run", side_effect=fake_run),
+    ):
+        win = UsageWindow()
+        win._trigger_update()
+        deadline = time.time() + 3.0
+        while win._update_btn.isEnabled() is False and time.time() < deadline:
+            qapp.processEvents()
+            time.sleep(0.1)
+
+    assert win._update_btn.isEnabled(), "button must re-enable so the user can retry"
+    assert "failed" in win._update_btn.text().lower()
+    win.close()
+
+
 def test_window_shows_update_banner(qapp, tmp_path):
     """_show_update_banner should make the update button visible with version text."""
     with (
