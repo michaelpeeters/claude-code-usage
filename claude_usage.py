@@ -574,7 +574,11 @@ class UsageWindow(QWidget):
             # makes the whole pipeline fail instead of silently piping nothing into bash.
             cmd = f"curl -fsSL {raw}/install.sh | bash"
             result = subprocess.run(
-                ["bash", "-o", "pipefail", "-c", cmd], check=False, env=clean_env, capture_output=True, text=True
+                ["bash", "-o", "pipefail", "-c", cmd],
+                check=False,
+                env=clean_env,
+                capture_output=True,
+                text=True,
             )
             if result.returncode != 0:
                 detail = (result.stderr or result.stdout or "").strip().splitlines()

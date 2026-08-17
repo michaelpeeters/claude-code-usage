@@ -235,7 +235,8 @@ def test_trigger_update_shows_error_on_curl_failure(qapp, tmp_path):
     from unittest.mock import MagicMock
 
     def fake_run(args, **kwargs):
-        return MagicMock(returncode=22, stdout="", stderr="curl: (22) The requested URL returned error: 429\n")
+        stderr = "curl: (22) The requested URL returned error: 429\n"
+        return MagicMock(returncode=22, stdout="", stderr=stderr)
 
     with (
         patch("claude_usage.PROJECTS_DIR", tmp_path),
