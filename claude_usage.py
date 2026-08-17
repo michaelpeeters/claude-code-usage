@@ -497,6 +497,14 @@ class UsageWindow(QWidget):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._watchdog)
         self._timer.start(30_000)
+        # Releases are infrequent, so re-checking hourly is enough to catch one without
+        # hammering the GitHub API for the lifetime of a long-running session.
+        self._update_check_timer = QTimer(self)
+        self._update_check_timer.timeout.connect(self._spawn_update_check)
+        self._update_check_timer.start(60 * 60_000)
+        self._spawn_update_check()
+
+    def _spawn_update_check(self):
         threading.Thread(target=self._check_for_update, daemon=True).start()
 
     def _check_for_update(self):
@@ -534,6 +542,7 @@ class UsageWindow(QWidget):
     def _show_update_banner(self, latest: str):
         self._update_btn.setText(f"↑ {latest} available — click to update")
         self._update_btn.setVisible(True)
+        self._update_check_timer.stop()
 
     def _do_restart(self, appimage: str):
         """Called on the main thread after install completes — launch new binary then quit."""
