@@ -248,7 +248,7 @@ def test_trigger_update_shows_error_on_curl_failure(qapp, tmp_path):
         deadline = time.time() + 3.0
         while win._update_btn.isEnabled() is False and time.time() < deadline:
             qapp.processEvents()
-            time.sleep(0.1)
+            time.sleep(0.3)
 
     assert win._update_btn.isEnabled(), "button must re-enable so the user can retry"
     assert "failed" in win._update_btn.text().lower()
