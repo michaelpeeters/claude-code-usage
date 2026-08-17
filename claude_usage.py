@@ -76,12 +76,14 @@ MODEL_SHORT = {
 # Standard API pricing in $/MTok (input, output) — the rate "extra usage" credits
 # bill at once plan limits are exhausted. Cache read = 0.1× input, write = 1.25×.
 # Prefix-matched, most-specific first.
+# Source of truth: https://platform.claude.com/docs/en/about-claude/pricing
 API_PRICING: dict[str, tuple[float, float]] = {
     "claude-fable": (10.0, 50.0),
     "claude-mythos": (10.0, 50.0),
     "claude-opus-4-1": (15.0, 75.0),
     "claude-opus-4-2": (15.0, 75.0),
     "claude-opus": (5.0, 25.0),
+    "claude-sonnet-5": (2.0, 10.0),
     "claude-sonnet": (3.0, 15.0),
     "claude-haiku": (1.0, 5.0),
 }

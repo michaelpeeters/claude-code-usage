@@ -249,9 +249,12 @@ def test_estimate_cost_sonnet_all_buckets():
         "cache_read_input_tokens": 1_000_000,
         "cache_creation_input_tokens": 1_000_000,
     }
-    # sonnet: $3 in, $15 out, cache read 0.1×3, cache write 1.25×3
+    # sonnet 4.6 (generic "claude-sonnet" prefix): $3 in, $15 out, cache read 0.1×3, cache write 1.25×3
     expected = 3.0 + 15.0 + 0.3 + 3.75
-    assert estimate_cost("claude-sonnet-5", usage) == pytest.approx(expected)
+    assert estimate_cost("claude-sonnet-4-6", usage) == pytest.approx(expected)
+    # sonnet 5 has its own, cheaper rate: $2 in, $10 out, cache read 0.1×2, cache write 1.25×2
+    expected_sonnet_5 = 2.0 + 10.0 + 0.2 + 2.5
+    assert estimate_cost("claude-sonnet-5", usage) == pytest.approx(expected_sonnet_5)
 
 
 def test_estimate_cost_unknown_model_is_zero():
