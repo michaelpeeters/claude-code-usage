@@ -548,7 +548,11 @@ class UsageWindow(QWidget):
 
     def _do_restart(self, appimage: str):
         """Called on the main thread after install completes — launch new binary then quit."""
-        subprocess.Popen([appimage])
+        _save_position(self.pos())
+        if appimage:
+            subprocess.Popen([appimage])
+        else:
+            subprocess.Popen(["open", "-a", "Claude Usage"])
         QApplication.quit()
 
     def _on_update_failed(self, message: str):
@@ -584,11 +588,8 @@ class UsageWindow(QWidget):
                 detail = (result.stderr or result.stdout or "").strip().splitlines()
                 self._update_failed.emit(detail[-1] if detail else f"exit {result.returncode}")
                 return
-            if sys.platform == "darwin":
-                subprocess.Popen(["open", "-a", "Claude Usage"])
-                QApplication.quit()
-            elif appimage:
-                # Emit signal so the main thread launches the new binary and quits.
+            if sys.platform == "darwin" or appimage:
+                # Emit signal so the main thread saves position, launches the new binary, and quits.
                 self._restart_app.emit(appimage)
 
         threading.Thread(target=_install, daemon=False).start()
