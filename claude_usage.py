@@ -505,6 +505,10 @@ class UsageWindow(QWidget):
         self._update_check_timer.timeout.connect(self._spawn_update_check)
         self._update_check_timer.start(60 * 60_000)
         self._spawn_update_check()
+        # Debounced so dragging the window doesn't hammer disk with a write per pixel.
+        self._pos_save_timer = QTimer(self)
+        self._pos_save_timer.setSingleShot(True)
+        self._pos_save_timer.timeout.connect(lambda: _save_position(self.pos()))
 
     def _spawn_update_check(self):
         threading.Thread(target=self._check_for_update, daemon=True).start()
@@ -1089,6 +1093,10 @@ class UsageWindow(QWidget):
         self.adjustSize()
         self.update()
         self.updated_label.setText(f"Updated {datetime.now().strftime('%H:%M:%S')}")
+
+    def moveEvent(self, event):
+        self._pos_save_timer.start(500)
+        super().moveEvent(event)
 
     def closeEvent(self, event):
         _save_position(self.pos())
