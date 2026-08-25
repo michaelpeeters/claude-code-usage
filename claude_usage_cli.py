@@ -614,10 +614,64 @@ def _print_text(r: dict) -> None:
         )
 
 
+def run_statusline() -> None:
+    """Bridge mode: read Claude Code's statusLine JSON from stdin, cache
+    rate_limits for the widget, and print a compact status line. Must stay
+    cheap — no JSONL scanning — since Claude Code re-runs this every turn.
+    """
+    import sys
+
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except Exception:
+        payload = {}
+
+    rate_limits = payload.get("rate_limits")
+    if isinstance(rate_limits, dict) and rate_limits:
+        cache = dict(load_rate_limits())
+        cache.update(rate_limits)
+        extra_usage = payload.get("extra_usage")
+        if isinstance(extra_usage, dict) and extra_usage:
+            cache["extra_usage"] = extra_usage
+        try:
+            tmp = RATE_LIMITS_CACHE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(cache))
+            tmp.replace(RATE_LIMITS_CACHE)
+        except Exception:
+            pass
+
+    model = payload.get("model", {}).get("display_name", "Claude")
+    cwd = payload.get("workspace", {}).get("current_dir") or payload.get("cwd") or ""
+    directory = os.path.basename(cwd.rstrip("/")) or cwd
+    ctx = payload.get("context_window", {}).get("used_percentage")
+    cost = payload.get("cost", {}).get("total_cost_usd") or 0
+
+    parts = [model]
+    if directory:
+        parts.append(directory)
+    if ctx is not None:
+        col = _color(ctx)
+        parts.append(f"{col}ctx {ctx:.0f}%{_RESET if col else ''}")
+    parts.append(fmt_cost(cost))
+
+    rl = rate_limits if isinstance(rate_limits, dict) else {}
+    fh_pct = rl.get("five_hour", {}).get("used_percentage")
+    sd_pct = rl.get("seven_day", {}).get("used_percentage")
+    if fh_pct is not None:
+        parts.append(f"5h {fh_pct:.0f}%")
+    if sd_pct is not None:
+        parts.append(f"7d {sd_pct:.0f}%")
+
+    print("  ·  ".join(parts))
+
+
 def main() -> None:
     import sys
 
     args = sys.argv[1:]
+    if "--statusline" in args:
+        run_statusline()
+        return
     use_json = "--json" in args
     use_text = "--text" in args  # LLM-friendly key=value; default is human
 
