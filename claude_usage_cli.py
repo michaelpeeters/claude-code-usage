@@ -112,6 +112,50 @@ def load_rate_limits() -> dict:
         return {}
 
 
+# ---------------------------------------------------------------------------
+# statusLine bridge setup — shared between install.sh's terminal prompt and
+# the GUI's own dialog (see claude_usage.py), so both agree on what counts
+# as "already configured" and never clobber a statusLine that isn't ours.
+# ---------------------------------------------------------------------------
+
+CLAUDE_SETTINGS = CLAUDE_DIR / "settings.json"
+_STATUSLINE_MARKERS = ("claude_usage_cli.py", "claude-usage.AppImage", "Claude Usage.app")
+
+
+def is_ours_statusline(command: str) -> bool:
+    return "--statusline" in command and any(m in command for m in _STATUSLINE_MARKERS)
+
+
+def statusline_status() -> str:
+    """'none' (unset), 'ours' (already our bridge), or 'foreign' (leave alone)."""
+    try:
+        settings = json.loads(CLAUDE_SETTINGS.read_text())
+    except Exception:
+        return "none"
+    sl = settings.get("statusLine")
+    if not isinstance(sl, dict) or not sl.get("command"):
+        return "none"
+    return "ours" if is_ours_statusline(sl["command"]) else "foreign"
+
+
+def write_statusline(command: str) -> None:
+    """Sets statusLine to `command`, backing up settings.json first. Caller must
+    have already checked statusline_status() != 'foreign'."""
+    import shutil
+
+    try:
+        settings = json.loads(CLAUDE_SETTINGS.read_text())
+    except Exception:
+        settings = {}
+    if CLAUDE_SETTINGS.exists():
+        shutil.copy2(CLAUDE_SETTINGS, CLAUDE_SETTINGS.with_name(CLAUDE_SETTINGS.name + ".bak"))
+    settings["statusLine"] = {"type": "command", "command": command}
+    CLAUDE_SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+    tmp = CLAUDE_SETTINGS.with_name(CLAUDE_SETTINGS.name + ".tmp")
+    tmp.write_text(json.dumps(settings, indent=2) + "\n")
+    tmp.replace(CLAUDE_SETTINGS)
+
+
 def collect_5h_window() -> int:
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(hours=5)

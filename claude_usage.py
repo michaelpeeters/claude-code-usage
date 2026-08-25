@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QSystemTrayIcon,
@@ -580,11 +581,10 @@ class UsageWindow(QWidget):
                 return
             # -o pipefail so a failed curl (e.g. GitHub rate-limiting raw.githubusercontent.com)
             # makes the whole pipeline fail instead of silently piping nothing into bash.
-            # --with-statusline: this subprocess has no /dev/tty (launched from a GUI, not a
-            # terminal), so install.sh's interactive prompt would silently no-op here — pass
-            # the flag explicitly so an in-app update still wires up the bridge. Still skips
-            # cleanly if a foreign statusLine is already configured.
-            cmd = f"curl -fsSL {raw}/install.sh | bash -s -- --with-statusline"
+            # No --with-statusline here: this subprocess has no /dev/tty, so install.sh's
+            # prompt would silently no-op anyway — _maybe_prompt_statusline() asks via a real
+            # dialog once the updated app restarts instead (see main()).
+            cmd = f"curl -fsSL {raw}/install.sh | bash"
             result = subprocess.run(
                 ["bash", "-o", "pipefail", "-c", cmd],
                 check=False,
@@ -1141,6 +1141,46 @@ def _save_settings(settings: dict) -> None:
         pass
 
 
+def _own_statusline_command() -> str:
+    """The command to invoke *this* running binary in --statusline mode."""
+    appimage = os.environ.get("APPIMAGE")
+    if appimage:
+        return f'"{appimage}" --statusline'
+    if getattr(sys, "frozen", False):
+        # PyInstaller build (macOS .app, Windows .exe) — the binary itself.
+        return f'"{sys.executable}" --statusline'
+    # Running from source.
+    return f'"{sys.executable}" "{os.path.abspath(__file__)}" --statusline'
+
+
+def _maybe_prompt_statusline() -> None:
+    """Asks once (never again after a Yes or a No) whether to wire up the
+    statusLine bridge for exact rate-limit %, but only if nothing is
+    configured yet — never touches an existing custom statusLine."""
+    from claude_usage_cli import statusline_status, write_statusline
+
+    settings = _load_settings()
+    if settings.get("statusline_prompt_answered"):
+        return
+    if statusline_status() != "none":
+        return
+    reply = QMessageBox.question(
+        None,
+        "Claude Usage",
+        "Set up exact rate-limit % via Claude Code's statusLine?\n\n"
+        "Without it, rate-limit % is a local token-count estimate that can be "
+        "off by several×. This wires up a small bridge script (100% local, no "
+        "network calls added) — it won't touch any statusLine you've already "
+        "configured yourself.",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.Yes,
+    )
+    if reply == QMessageBox.StandardButton.Yes:
+        write_statusline(_own_statusline_command())
+    settings["statusline_prompt_answered"] = True
+    _save_settings(settings)
+
+
 def main():
     if "--statusline" in sys.argv:
         # Bridge mode: no GUI needed, so skip QApplication (and any display
@@ -1157,6 +1197,7 @@ def main():
     if pos:
         win.move(*pos)
     win.show()
+    _maybe_prompt_statusline()
     sys.exit(app.exec())
 
 
