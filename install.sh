@@ -129,10 +129,18 @@ maybe_prompt_statusline() {
     local status
     status=$(statusline_status)
     [[ "$status" != "none" ]] && return
-    [[ -r /dev/tty && -w /dev/tty ]] || return
-    printf 'Set up exact rate-limit %% via Claude Code statusLine? [Y/n] ' > /dev/tty
+    # `test -r/-w /dev/tty` only checks the device file's permission bits (always
+    # true — it's world RW), not whether this process actually has a controlling
+    # terminal (e.g. launched from a GUI subprocess, as the in-app updater does).
+    # Try to actually write to it instead: printf isn't a POSIX "special builtin"
+    # (unlike exec/eval/source), so a redirection failure here just makes printf
+    # exit non-zero — caught by `|| return` — instead of killing the whole shell
+    # under set -e the way a failed `exec 3<>/dev/tty` redirection would.
+    # `return` (bare) would return printf's own failing exit status here, which
+    # then aborts the *caller* under set -e — must be an explicit `return 0`.
+    printf 'Set up exact rate-limit %% via Claude Code statusLine? [Y/n] ' > /dev/tty 2>/dev/null || return 0
     local ans=""
-    read -r ans < /dev/tty || true
+    read -r ans < /dev/tty 2>/dev/null || true
     case "$ans" in
         [nN]*) ;;
         *) WITH_STATUSLINE=1 ;;
