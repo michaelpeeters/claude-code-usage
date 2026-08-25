@@ -1153,7 +1153,7 @@ def _own_statusline_command() -> str:
     return f'"{sys.executable}" "{os.path.abspath(__file__)}" --statusline'
 
 
-def _maybe_prompt_statusline() -> None:
+def _maybe_prompt_statusline(win: "UsageWindow") -> None:
     """Asks once (never again after a Yes or a No) whether to wire up the
     statusLine bridge for exact rate-limit %, but only if nothing is
     configured yet — never touches an existing custom statusLine."""
@@ -1169,14 +1169,19 @@ def _maybe_prompt_statusline() -> None:
         "Claude Usage",
         "Set up exact rate-limit % via Claude Code's statusLine?\n\n"
         "Without it, rate-limit % is a local token-count estimate that can be "
-        "off by several×. This wires up a small bridge script (100% local, no "
-        "network calls added) — it won't touch any statusLine you've already "
-        "configured yourself.",
+        "off by a large margin. This wires up a small bridge script (100% "
+        "local, no network calls added) — it won't touch any statusLine "
+        "you've already configured yourself.",
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         QMessageBox.StandardButton.Yes,
     )
     if reply == QMessageBox.StandardButton.Yes:
         write_statusline(_own_statusline_command())
+        # Reflect the change immediately rather than waiting for the next
+        # auto-refresh — still shows "estimated" until Claude Code actually
+        # invokes the new statusLine on its next turn, but at least doesn't
+        # look like nothing happened.
+        win.refresh()
     settings["statusline_prompt_answered"] = True
     _save_settings(settings)
 
@@ -1197,7 +1202,7 @@ def main():
     if pos:
         win.move(*pos)
     win.show()
-    _maybe_prompt_statusline()
+    _maybe_prompt_statusline(win)
     sys.exit(app.exec())
 
 
