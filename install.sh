@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 # install.sh — install or update claude-code-usage from GitHub releases
 # Usage:
-#   ./install.sh                    install, or update if already installed
+#   ./install.sh                    install, or update if already installed —
+#                                    prompts to wire up the statusLine bridge
+#                                    (exact rate-limit %) unless one is already set
 #   ./install.sh --uninstall        remove everything
 #   ./install.sh --source           install from local source (dev / no release yet)
-#   ./install.sh --with-statusline  also wire up Claude Code's statusLine so the
-#                                    widget shows exact rate-limit % instead of
-#                                    an estimate (combine with --source, e.g.
-#                                    ./install.sh --source --with-statusline)
+#   ./install.sh --with-statusline  wire up the statusLine bridge without prompting
+#                                    (combine with --source, e.g.
+#                                    ./install.sh --source --with-statusline; also
+#                                    what to pass through a curl|bash pipe, e.g.
+#                                    curl -fsSL .../install.sh | bash -s -- --with-statusline)
+#   ./install.sh --no-statusline    skip the statusLine bridge without prompting
 set -euo pipefail
 
 REPO="michaelpeeters/claude-code-usage"
@@ -18,8 +22,10 @@ VERSION_FILE="$INSTALL_DIR/.version"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 
 WITH_STATUSLINE=0
+NO_STATUSLINE=0
 for arg in "$@"; do
     [[ "$arg" == "--with-statusline" ]] && WITH_STATUSLINE=1
+    [[ "$arg" == "--no-statusline" ]] && NO_STATUSLINE=1
 done
 
 # ── helpers ────────────────────────────────────────────────────────────────
@@ -68,6 +74,51 @@ with open(tmp, "w") as f:
 os.replace(tmp, settings_file)
 print(f"  statusLine configured in {settings_file} (previous version backed up to .bak)")
 PYEOF
+}
+
+# Prints "none" (no statusLine set), "ours" (already our bridge), or
+# "foreign" (some other custom statusLine — never overwrite it).
+statusline_status() {
+    local python_bin
+    python_bin=$(command -v python3 2>/dev/null) || { echo "none"; return; }
+    [[ -f "$CLAUDE_SETTINGS" ]] || { echo "none"; return; }
+    "$python_bin" - "$CLAUDE_SETTINGS" <<'PYEOF'
+import json, sys
+
+try:
+    with open(sys.argv[1]) as f:
+        settings = json.load(f)
+except Exception:
+    print("none")
+    sys.exit()
+
+sl = settings.get("statusLine")
+if not isinstance(sl, dict) or not sl.get("command"):
+    print("none")
+elif "claude_usage_cli.py --statusline" in sl["command"]:
+    print("ours")
+else:
+    print("foreign")
+PYEOF
+}
+
+# Asks (via /dev/tty, so it still works under `curl | bash`) whether to wire
+# up the statusLine bridge, unless --with-statusline/--no-statusline already
+# decided it, or a statusLine is already configured either way. Silently
+# skips the prompt (defaults to no) if there's no interactive terminal.
+maybe_prompt_statusline() {
+    [[ "$WITH_STATUSLINE" == "1" || "$NO_STATUSLINE" == "1" ]] && return
+    local status
+    status=$(statusline_status)
+    [[ "$status" != "none" ]] && return
+    [[ -r /dev/tty && -w /dev/tty ]] || return
+    printf 'Set up exact rate-limit %% via Claude Code statusLine? [Y/n] ' > /dev/tty
+    local ans=""
+    read -r ans < /dev/tty || true
+    case "$ans" in
+        [nN]*) ;;
+        *) WITH_STATUSLINE=1 ;;
+    esac
 }
 
 remove_statusline() {
@@ -119,6 +170,10 @@ if [[ "${1:-}" == "--uninstall" ]]; then
     green "Done."
     exit 0
 fi
+
+# ── statusLine bridge: prompt if undecided and nothing is configured yet ──
+
+maybe_prompt_statusline
 
 # ── source install (dev / no release available) ───────────────────────────
 
@@ -276,7 +331,7 @@ WRAP
     chmod +x "$BIN_DIR/claude-usage"
 fi
 
-# ── statusLine bridge (opt-in, exact rate-limit %) ─────────────────────────
+# ── statusLine bridge (exact rate-limit %, decided above by flag or prompt) ─
 
 if [[ "$WITH_STATUSLINE" == "1" ]]; then
     if command -v python3 >/dev/null 2>&1; then
@@ -318,4 +373,6 @@ printf '  Update   : ./install.sh\n'
 printf '  Remove   : ./install.sh --uninstall\n'
 [[ "$WITH_STATUSLINE" != "1" ]] \
     && printf '  Exact %%  : re-run with --with-statusline for real (not estimated) rate-limit %%\n'
+[[ "$WITH_STATUSLINE" == "1" ]] \
+    && printf '  Exact %%  : statusLine wired up — restart Claude Code sessions to pick it up\n'
 printf '\n'

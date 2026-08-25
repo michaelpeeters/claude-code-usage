@@ -17,7 +17,7 @@ A lightweight desktop widget that shows your [Claude Code](https://claude.ai/cod
 - Per-model token breakdown (Sonnet / Opus / Fable / Haiku)
 - **API-rate cost equivalent** — what this week's usage would bill as [extra-usage credits](https://support.claude.com/en/articles/12429409-extra-usage-for-paid-claude-plans) beyond your plan limits, estimated locally at standard API pricing (incl. cache reads/writes)
 - **Extra-usage credit consumption** ($used / monthly cap) — shown automatically once your Claude Code version exposes `extra_usage` in the statusline payload
-- Exact rate-limit % and reset times (install with `--with-statusline`, see below — otherwise these are local token-count estimates)
+- Exact rate-limit % and reset times (installer prompts to set this up, see [Install](#install) — otherwise these are local token-count estimates)
 - Collapsible sections — state persists across restarts
 
 Everything is computed from local `~/.claude` data (transcripts, stats cache, statusline cache) — the app itself never calls any API.
@@ -34,11 +34,15 @@ curl -fsSL https://raw.githubusercontent.com/michaelpeeters/claude-code-usage/ma
 
 Re-run anytime to update. Use `./install.sh --uninstall` to remove.
 
-Add `--with-statusline` to also get **exact** rate-limit % instead of the local token-count estimate — it wires up Claude Code's [statusLine](https://code.claude.com/docs/en/statusline) hook to feed real `rate_limits` data to the widget (still 100% local: Claude Code pipes the JSON to a small bundled script over stdin, no network calls added). Skips silently if you already have a custom `statusLine` configured. Example:
+If you don't already have a Claude Code `statusLine` configured, the installer asks whether to wire one up so the widget shows **exact** rate-limit % instead of the local token-count estimate (still 100% local: Claude Code pipes session JSON to a small bundled script over stdin, no network calls added). It never touches an existing custom `statusLine` — detected automatically, no prompt in that case.
+
+To skip the prompt (e.g. scripted installs), pass `--with-statusline` or `--no-statusline` explicitly. Through the `curl | bash` one-liner, pass it after `bash -s --`:
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/michaelpeeters/claude-code-usage/main/install.sh | bash -s -- --with-statusline
+
+# from a local checkout:
 ./install.sh --with-statusline
-# or, from a local checkout:
 ./install.sh --source --with-statusline
 ```
 
