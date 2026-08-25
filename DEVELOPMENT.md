@@ -45,6 +45,8 @@ Binaries (AppImage / macOS `.app` / Windows `.exe`) are built and published auto
 
 **Live context** — scans session JSONL files modified in the last 30 min. Reads the last 256 KB of each file to find the most recent assistant entry with `usage.input_tokens`; `used = input_tokens + cache_creation_input_tokens + cache_read_input_tokens`. Context limits: Opus 4.7/4.8 → 1 M tokens, all others → 200 K.
 
+**Rate limits** — `load_rate_limits()` reads `~/.claude/rate-limits-cache.json`. Nothing writes that file unless the user opts into `install.sh --with-statusline`, which points Claude Code's `statusLine` hook at `claude_usage_cli.py --statusline` (see `run_statusline()`). Without it, `THROTTLE_ESTIMATE`/`WEEK_ESTIMATE` (flat token-count constants) are used instead and everything is labeled `estimated`/`(estimated)` in the output — those constants are plan-agnostic guesses and can be off by several×, since Anthropic's real usage accounting isn't a linear function of local raw token counts and there's no other local source for it.
+
 **Settings persistence** — window position in `~/.claude/claude-usage-pos.json`; section collapse state in `~/.claude/claude-usage-settings.json`.
 
 **AppImage quirks (Manjaro/Arch)** — the updater strips `LD_LIBRARY_PATH` and `LD_PRELOAD` before spawning `curl` (AppImage injects its own bundled `libssl` which breaks system `curl`). After install, the new AppImage is launched via a Qt signal on the main thread to avoid broken Qt state in the child process.

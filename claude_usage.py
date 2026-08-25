@@ -580,7 +580,11 @@ class UsageWindow(QWidget):
                 return
             # -o pipefail so a failed curl (e.g. GitHub rate-limiting raw.githubusercontent.com)
             # makes the whole pipeline fail instead of silently piping nothing into bash.
-            cmd = f"curl -fsSL {raw}/install.sh | bash"
+            # --with-statusline: this subprocess has no /dev/tty (launched from a GUI, not a
+            # terminal), so install.sh's interactive prompt would silently no-op here — pass
+            # the flag explicitly so an in-app update still wires up the bridge. Still skips
+            # cleanly if a foreign statusLine is already configured.
+            cmd = f"curl -fsSL {raw}/install.sh | bash -s -- --with-statusline"
             result = subprocess.run(
                 ["bash", "-o", "pipefail", "-c", cmd],
                 check=False,
@@ -1138,6 +1142,14 @@ def _save_settings(settings: dict) -> None:
 
 
 def main():
+    if "--statusline" in sys.argv:
+        # Bridge mode: no GUI needed, so skip QApplication (and any display
+        # requirement) entirely — lets the shipped binary double as the
+        # Claude Code statusLine command with no separate script/interpreter.
+        from claude_usage_cli import run_statusline
+
+        run_statusline()
+        return
     app = QApplication(sys.argv)
     app.setApplicationName("Claude Usage")
     win = UsageWindow()

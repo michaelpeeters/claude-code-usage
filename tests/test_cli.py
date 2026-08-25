@@ -407,3 +407,93 @@ def test_print_human_compact_soon_warning():
 def test_print_human_no_live_context():
     out = _capture_human(_minimal_report(live_context=[]))
     assert "no active sessions" in out
+
+
+# ---------------------------------------------------------------------------
+# --statusline (bridge mode: stdin JSON -> rate-limits cache + status line)
+# ---------------------------------------------------------------------------
+
+
+def test_statusline_writes_cache_and_prints_line(tmp_path, capsys):
+    from claude_usage_cli import main
+
+    cache = tmp_path / "rate-limits-cache.json"
+    payload = {
+        "model": {"display_name": "Sonnet"},
+        "workspace": {"current_dir": "/home/user/myproject"},
+        "cost": {"total_cost_usd": 1.5},
+        "context_window": {"used_percentage": 12},
+        "rate_limits": {
+            "five_hour": {"used_percentage": 57, "resets_at": 1234567890},
+            "seven_day": {"used_percentage": 51, "resets_at": 1234599999},
+        },
+    }
+    with (
+        patch("claude_usage_cli.RATE_LIMITS_CACHE", cache),
+        patch("sys.argv", ["claude_usage_cli.py", "--statusline"]),
+        patch("sys.stdin", io.StringIO(json.dumps(payload))),
+    ):
+        main()
+
+    captured = capsys.readouterr()
+    assert "5h 57%" in captured.out
+    assert "7d 51%" in captured.out
+    assert "myproject" in captured.out
+
+    cached = json.loads(cache.read_text())
+    assert cached["five_hour"]["used_percentage"] == 57
+    assert cached["seven_day"]["used_percentage"] == 51
+
+
+def test_statusline_missing_rate_limits_preserves_existing_cache(tmp_path, capsys):
+    from claude_usage_cli import main
+
+    cache = tmp_path / "rate-limits-cache.json"
+    cache.write_text(json.dumps({"seven_day": {"used_percentage": 51, "resets_at": 1}}))
+    payload = {"model": {"display_name": "Sonnet"}, "workspace": {"current_dir": "/x"}}
+    with (
+        patch("claude_usage_cli.RATE_LIMITS_CACHE", cache),
+        patch("sys.argv", ["claude_usage_cli.py", "--statusline"]),
+        patch("sys.stdin", io.StringIO(json.dumps(payload))),
+    ):
+        main()
+
+    captured = capsys.readouterr()
+    assert "5h" not in captured.out
+    assert "7d" not in captured.out
+    # rate_limits absent from this turn's payload -> earlier real data untouched
+    assert json.loads(cache.read_text())["seven_day"]["used_percentage"] == 51
+
+
+def test_statusline_merges_partial_window_update(tmp_path):
+    from claude_usage_cli import main
+
+    cache = tmp_path / "rate-limits-cache.json"
+    cache.write_text(json.dumps({"seven_day": {"used_percentage": 51, "resets_at": 1}}))
+    payload = {"rate_limits": {"five_hour": {"used_percentage": 60, "resets_at": 2}}}
+    with (
+        patch("claude_usage_cli.RATE_LIMITS_CACHE", cache),
+        patch("sys.argv", ["claude_usage_cli.py", "--statusline"]),
+        patch("sys.stdin", io.StringIO(json.dumps(payload))),
+    ):
+        main()
+
+    cached = json.loads(cache.read_text())
+    assert cached["five_hour"]["used_percentage"] == 60
+    assert cached["seven_day"]["used_percentage"] == 51
+
+
+def test_statusline_malformed_stdin_does_not_crash(tmp_path, capsys):
+    from claude_usage_cli import main
+
+    cache = tmp_path / "rate-limits-cache.json"
+    with (
+        patch("claude_usage_cli.RATE_LIMITS_CACHE", cache),
+        patch("sys.argv", ["claude_usage_cli.py", "--statusline"]),
+        patch("sys.stdin", io.StringIO("not json")),
+    ):
+        main()
+
+    captured = capsys.readouterr()
+    assert "Claude" in captured.out
+    assert not cache.exists()
