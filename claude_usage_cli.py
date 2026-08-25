@@ -630,9 +630,6 @@ def run_statusline() -> None:
     if isinstance(rate_limits, dict) and rate_limits:
         cache = dict(load_rate_limits())
         cache.update(rate_limits)
-        extra_usage = payload.get("extra_usage")
-        if isinstance(extra_usage, dict) and extra_usage:
-            cache["extra_usage"] = extra_usage
         try:
             tmp = RATE_LIMITS_CACHE.with_suffix(".tmp")
             tmp.write_text(json.dumps(cache))
