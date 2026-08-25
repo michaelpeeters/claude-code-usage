@@ -1138,6 +1138,14 @@ def _save_settings(settings: dict) -> None:
 
 
 def main():
+    if "--statusline" in sys.argv:
+        # Bridge mode: no GUI needed, so skip QApplication (and any display
+        # requirement) entirely — lets the shipped binary double as the
+        # Claude Code statusLine command with no separate script/interpreter.
+        from claude_usage_cli import run_statusline
+
+        run_statusline()
+        return
     app = QApplication(sys.argv)
     app.setApplicationName("Claude Usage")
     win = UsageWindow()

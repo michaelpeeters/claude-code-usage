@@ -37,18 +37,36 @@ info()  { printf '  %s\n' "$*"; }
 
 need() { command -v "$1" >/dev/null 2>&1 || { red "Error: '$1' not found. $2"; exit 1; }; }
 
-# Writes/removes the `statusLine` entry in ~/.claude/settings.json so Claude
-# Code feeds real rate_limits to the widget instead of it estimating from
-# local token counts. Never touches a statusLine that isn't ours. Backs up
-# settings.json before any write.
-setup_statusline() {
-    local python_bin="$1" cli_path="$2"
-    mkdir -p "$(dirname "$CLAUDE_SETTINGS")"
-    "$python_bin" - "$CLAUDE_SETTINGS" "$python_bin" "$cli_path" <<'PYEOF'
-import json, os, shutil, sys
+# A statusLine command is "ours" if it invokes our own --statusline bridge —
+# either the bundled binary (AppImage / macOS .app, no python3 needed at
+# runtime) or, for --source installs, claude_usage_cli.py via a venv python.
+# Shared between setup_statusline/statusline_status/remove_statusline so a
+# command built by any past version of this script is still recognized.
+_IS_OURS_PY='
+def is_ours(cmd):
+    return "--statusline" in cmd and (
+        "claude_usage_cli.py" in cmd
+        or "claude-usage.AppImage" in cmd
+        or "Claude Usage.app" in cmd
+    )
+'
 
-settings_file, python_bin, cli_path = sys.argv[1], sys.argv[2], sys.argv[3]
-command = f'{python_bin} {cli_path} --statusline'
+# Writes the `statusLine` entry in ~/.claude/settings.json so Claude Code
+# feeds real rate_limits to the widget instead of it estimating from local
+# token counts. Never touches a statusLine that isn't ours. Backs up
+# settings.json before any write. Takes the full command to run, e.g.
+# '"/path/to/claude-usage.AppImage" --statusline'.
+setup_statusline() {
+    local command="$1" python_bin
+    python_bin=$(command -v python3 2>/dev/null) || {
+        red "  python3 not found — skipping statusline setup (only needed for the installer to edit settings.json, not at runtime)."
+        return
+    }
+    mkdir -p "$(dirname "$CLAUDE_SETTINGS")"
+    "$python_bin" - "$CLAUDE_SETTINGS" "$command" <<PYEOF
+import json, os, shutil, sys
+$_IS_OURS_PY
+settings_file, command = sys.argv[1], sys.argv[2]
 
 try:
     with open(settings_file) as f:
@@ -57,7 +75,7 @@ except (FileNotFoundError, json.JSONDecodeError):
     settings = {}
 
 existing = settings.get("statusLine")
-if isinstance(existing, dict) and existing.get("command") and cli_path not in existing.get("command", ""):
+if isinstance(existing, dict) and existing.get("command") and not is_ours(existing["command"]):
     print(f"  statusLine already configured ({existing['command']!r}) — leaving it alone.")
     print("  To get exact rate-limit %, add this to your own statusLine script:")
     print("    read rate_limits from stdin JSON, write it to ~/.claude/rate-limits-cache.json")
@@ -82,9 +100,9 @@ statusline_status() {
     local python_bin
     python_bin=$(command -v python3 2>/dev/null) || { echo "none"; return; }
     [[ -f "$CLAUDE_SETTINGS" ]] || { echo "none"; return; }
-    "$python_bin" - "$CLAUDE_SETTINGS" <<'PYEOF'
+    "$python_bin" - "$CLAUDE_SETTINGS" <<PYEOF
 import json, sys
-
+$_IS_OURS_PY
 try:
     with open(sys.argv[1]) as f:
         settings = json.load(f)
@@ -95,7 +113,7 @@ except Exception:
 sl = settings.get("statusLine")
 if not isinstance(sl, dict) or not sl.get("command"):
     print("none")
-elif "claude_usage_cli.py --statusline" in sl["command"]:
+elif is_ours(sl["command"]):
     print("ours")
 else:
     print("foreign")
@@ -125,9 +143,9 @@ remove_statusline() {
     local python_bin
     python_bin=$(command -v python3 2>/dev/null) || return 0
     [[ -f "$CLAUDE_SETTINGS" ]] || return 0
-    "$python_bin" - "$CLAUDE_SETTINGS" <<'PYEOF'
+    "$python_bin" - "$CLAUDE_SETTINGS" <<PYEOF
 import json, sys
-
+$_IS_OURS_PY
 settings_file = sys.argv[1]
 try:
     with open(settings_file) as f:
@@ -136,9 +154,7 @@ except (FileNotFoundError, json.JSONDecodeError):
     sys.exit(0)
 
 sl = settings.get("statusLine")
-# Matches both --source (git checkout path) and release (INSTALL_DIR) commands —
-# both always end in "claude_usage_cli.py --statusline".
-if isinstance(sl, dict) and "claude_usage_cli.py --statusline" in (sl.get("command") or ""):
+if isinstance(sl, dict) and is_ours(sl.get("command") or ""):
     del settings["statusLine"]
     with open(settings_file, "w") as f:
         json.dump(settings, f, indent=2)
@@ -214,7 +230,7 @@ if [[ "${1:-}" == "--source" ]]; then
     fi
     if [[ "$WITH_STATUSLINE" == "1" ]]; then
         bold "Wiring up Claude Code statusLine…"
-        setup_statusline "$VENV/bin/python" "$SCRIPT_DIR/claude_usage_cli.py"
+        setup_statusline "\"$VENV/bin/python\" \"$SCRIPT_DIR/claude_usage_cli.py\" --statusline"
     fi
 
     green "Source install done. Run: claude-usage"
@@ -332,16 +348,19 @@ WRAP
 fi
 
 # ── statusLine bridge (exact rate-limit %, decided above by flag or prompt) ─
+#
+# The bridge is baked into the shipped binary itself (claude_usage.py
+# handles `--statusline` before touching Qt/a display, see main()) — no
+# separate script to fetch, no python3 needed at runtime, works the same
+# under bash or zsh since Claude Code just execs the command directly.
 
 if [[ "$WITH_STATUSLINE" == "1" ]]; then
-    if command -v python3 >/dev/null 2>&1; then
-        bold "Wiring up Claude Code statusLine…"
-        CLI_PATH="$INSTALL_DIR/claude_usage_cli.py"
-        curl -fsSL -o "$CLI_PATH" \
-            "https://raw.githubusercontent.com/$REPO/$LATEST_TAG/claude_usage_cli.py"
-        setup_statusline "$(command -v python3)" "$CLI_PATH"
-    else
-        red "python3 not found — skipping statusline setup (needed only for --with-statusline)."
+    bold "Wiring up Claude Code statusLine…"
+    if [[ "$PLATFORM" == "linux" ]]; then
+        setup_statusline "\"$APPIMAGE\" --statusline"
+    elif [[ "$PLATFORM" == "macos" ]]; then
+        MACOS_BIN="$APPS_DIR/Claude Usage.app/Contents/MacOS/Claude Usage"
+        setup_statusline "\"$MACOS_BIN\" --statusline"
     fi
 fi
 
