@@ -35,6 +35,7 @@ def _color(pct: float) -> str:
     return ""
 
 MODEL_CONTEXT_LIMIT: dict[str, int] = {
+    "claude-opus-5-5": 1_000_000,
     "claude-opus-4-8": 1_000_000,
     "claude-opus-4-7": 1_000_000,
     "claude-sonnet-5": 1_000_000,
@@ -47,6 +48,7 @@ MODEL_SHORT = {
     "claude-sonnet-5": "Sonnet",
     "claude-opus-4-7": "Opus",
     "claude-opus-4-8": "Opus",
+    "claude-opus-5-5": "Opus",
     "claude-fable-5": "Fable",
     "claude-mythos-5": "Mythos",
     "claude-haiku-4-5-20251001": "Haiku",
@@ -78,7 +80,9 @@ API_PRICING: dict[str, tuple[float, float]] = {
     "claude-mythos": (10.0, 50.0),
     "claude-opus-4-1": (15.0, 75.0),
     "claude-opus-4-2": (15.0, 75.0),
+    "claude-opus-5-5": (4.0, 20.0),
     "claude-opus": (5.0, 25.0),
+    "claude-sonnet-5": (2.0, 10.0),
     "claude-sonnet": (3.0, 15.0),
     "claude-haiku": (1.0, 5.0),
 }
