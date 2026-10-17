@@ -18,9 +18,10 @@ A lightweight desktop widget that shows your [Claude Code](https://claude.ai/cod
 - **API-rate cost equivalent** — what this week's usage would bill as [extra-usage credits](https://support.claude.com/en/articles/12429409-extra-usage-for-paid-claude-plans) beyond your plan limits, estimated locally at standard API pricing (incl. cache reads/writes)
 - **Extra-usage credit consumption** ($used / monthly cap) — shown automatically once your Claude Code version exposes `extra_usage` in the statusline payload
 - Exact rate-limit % and reset times (installer prompts to set this up, see [Install](#install) — otherwise these are local token-count estimates)
+- **Claude Desktop integration** — if the [Claude desktop app](https://claude.ai/download) is installed and running, its account-wide plan-usage samples (chat + Cowork + Code) are picked up automatically: exact 5h/7d % without a statusline hook, plus separate Opus / Sonnet / Cowork weekly limits and extra-usage %. Desktop's Code tab sessions are already counted in the token stats like any Claude Code session.
 - Collapsible sections — state persists across restarts
 
-Everything is computed from local `~/.claude` data (transcripts, stats cache, statusline cache) — the app itself never calls any API.
+Everything is computed from local data — `~/.claude` (transcripts, stats cache, statusline cache) and, if present, Claude Desktop's `plan-usage-history.json` — the app itself never calls any API.
 
 ---
 

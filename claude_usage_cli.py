@@ -3,6 +3,7 @@
 
 import json
 import os
+import sys
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -114,6 +115,97 @@ def load_rate_limits() -> dict:
         return json.loads(RATE_LIMITS_CACHE.read_text())
     except Exception:
         return {}
+
+
+# ---------------------------------------------------------------------------
+# Claude Desktop plan-usage samples — Desktop polls the server's plan-usage
+# endpoint while it runs and appends utilization % to plan-usage-history.json
+# (one sample per ≤4.5 min, 30-day retention). These are account-wide figures
+# (chat + Cowork + Code), so they complement the statusline cache. Undocumented
+# internal format: any surprise just means "no Desktop data".
+# ---------------------------------------------------------------------------
+
+
+def _desktop_config_dir() -> Path:
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Claude"
+    if sys.platform == "win32":
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "Claude"
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "Claude"
+
+
+DESKTOP_USAGE_HISTORY = _desktop_config_dir() / "plan-usage-history.json"
+DESKTOP_MAX_AGE = 3600  # seconds; older samples are ignored (Desktop probably closed)
+# Desktop's short keys → statusline-style rate_limits keys
+_DESKTOP_KEYS = {
+    "fh": "five_hour",
+    "sd": "seven_day",
+    "so": "seven_day_opus",
+    "sn": "seven_day_sonnet",
+    "cw": "seven_day_cowork",
+}
+_WINDOW_SECS = {"five_hour": 5 * 3600, "seven_day": 7 * 86400}
+
+
+def load_desktop_usage() -> dict:
+    """Newest Claude Desktop sample as {"t": epoch_s, "<short key>": pct, ...}; {} if none/stale."""
+    try:
+        samples = json.loads(DESKTOP_USAGE_HISTORY.read_text())["samples"]
+        latest = max(samples, key=lambda s: s["t"])
+        t = latest["t"] / 1000
+        if time.time() - t > DESKTOP_MAX_AGE:
+            return {}
+        pcts = {k: float(v) for k, v in latest["u"].items() if isinstance(v, (int, float))}
+        return {"t": t, **pcts} if pcts else {}
+    except Exception:
+        return {}
+
+
+def merge_desktop_usage(rl: dict, desktop: dict, rl_mtime: float) -> dict:
+    """Overlay a Desktop sample onto statusline rate limits (marked source="desktop").
+
+    5h/7d: Desktop wins when its sample is newer than the statusline cache. Desktop
+    doesn't record reset times, so the statusline's resets_at is kept only when the
+    sample falls inside that same, still-running window. Per-model/Cowork weekly %
+    and extra-usage % only exist in Desktop data and are added when missing.
+    """
+    if not desktop:
+        return rl
+    rl = dict(rl)
+    t = desktop["t"]
+    now = time.time()
+    for short, key in _DESKTOP_KEYS.items():
+        if short not in desktop:
+            continue
+        cur = rl.get(key) or {}
+        entry = {"used_percentage": desktop[short], "source": "desktop"}
+        if key in _WINDOW_SECS:
+            if "used_percentage" in cur and rl_mtime >= t:
+                continue  # statusline is fresher
+            reset = cur.get("resets_at")
+            if reset:
+                if t < reset - _WINDOW_SECS[key]:
+                    continue  # sample predates the window the statusline knows about
+                if t < reset:
+                    if reset <= now:
+                        continue  # sample is from a window that has since reset
+                    entry["resets_at"] = reset
+        elif "used_percentage" in cur:
+            continue
+        rl[key] = entry
+    if "xu" in desktop and not rl.get("extra_usage"):
+        rl["extra_usage"] = {"is_enabled": True, "utilization": desktop["xu"], "source": "desktop"}
+    return rl
+
+
+def load_combined_rate_limits() -> dict:
+    """Statusline rate limits with the latest Claude Desktop sample merged in."""
+    rl = load_rate_limits()
+    try:
+        rl_mtime = RATE_LIMITS_CACHE.stat().st_mtime
+    except OSError:
+        rl_mtime = 0.0
+    return merge_desktop_usage(rl, load_desktop_usage(), rl_mtime)
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +481,7 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
             "plan": _infer_plan(implied) if implied else None,
             "resets_at": datetime.fromtimestamp(reset_ts).strftime("%H:%M") if reset_ts else None,
             "estimated": False,
+            "source": fh.get("source", "statusline"),
         }
     else:
         ratio = min(1.0, win_tokens / THROTTLE_ESTIMATE)
@@ -399,6 +492,7 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
             "plan": None,
             "resets_at": None,
             "estimated": True,
+            "source": None,
         }
 
     w_msgs = w_tokens = w_sessions = 0
@@ -433,6 +527,7 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
             "sessions": w_sessions,
             "resets_at": datetime.fromtimestamp(reset_ts).strftime("%a %H:%M") if reset_ts else None,
             "estimated": False,
+            "source": sd.get("source", "statusline"),
         }
     else:
         ratio = min(1.0, w_tokens / WEEK_ESTIMATE)
@@ -444,9 +539,20 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
             "sessions": w_sessions,
             "resets_at": None,
             "estimated": True,
+            "source": None,
         }
 
     week_stats["api_cost_usd"] = round(w_cost, 2)
+    # Separate weekly limits (per model / Cowork) — only Claude Desktop records these.
+    week_stats["limits_pct"] = {
+        name: round(rl[key]["used_percentage"], 1)
+        for key, name in (
+            ("seven_day_opus", "opus"),
+            ("seven_day_sonnet", "sonnet"),
+            ("seven_day_cowork", "cowork"),
+        )
+        if "used_percentage" in rl.get(key, {})
+    }
 
     # Extra-usage credits (opt-in pay-per-use beyond plan limits, billed at API
     # rates). Present only when Claude Code exposes `extra_usage` in the
@@ -459,6 +565,7 @@ def _build_report(daily: dict, win_tokens: int, live_ctxs: list[dict], rl: dict)
             "used_usd": round(eu["used_credits"] / 100, 2) if eu.get("used_credits") is not None else None,
             "limit_usd": round(eu["monthly_limit"] / 100, 2) if eu.get("monthly_limit") else None,
             "pct": round(eu["utilization"], 1) if eu.get("utilization") is not None else None,
+            "source": eu.get("source", "statusline"),
         }
 
     return {
@@ -519,6 +626,7 @@ def _print_human(r: dict) -> None:
             [
                 f"plan ~{w['plan']}" if w["plan"] else None,
                 f"resets {w['resets_at']}" if w["resets_at"] else None,
+                "via Claude Desktop" if w.get("source") == "desktop" else None,
             ],
         )
     )
@@ -534,8 +642,12 @@ def _print_human(r: dict) -> None:
     bar = _bar(wk["pct"] / 100)
     limit_str = fmt_tokens(wk["limit"]) if wk["limit"] else "?"
     reset_str = f"  ·  resets {wk['resets_at']}" if wk["resets_at"] else ""
+    if wk.get("source") == "desktop":
+        reset_str += "  ·  via Claude Desktop"
     print(f"Week (7 days){est}")
     print(f"  [{bar}] {wk['pct']:3.0f}%   {fmt_tokens(wk['used'])} / {limit_str}{reset_str}")
+    if wk.get("limits_pct"):
+        print("  " + "  ·  ".join(f"{k.capitalize()} {v:.0f}%" for k, v in wk["limits_pct"].items()))
     print(f"  Messages {wk['messages']}  ·  Sessions {wk['sessions']}")
     if wk.get("api_cost_usd"):
         print(f"  ≈ {fmt_cost(wk['api_cost_usd'])} at API rates (extra-usage billing equivalent)")
@@ -550,6 +662,8 @@ def _print_human(r: dict) -> None:
             lim = fmt_cost(eu["limit_usd"]) if eu["limit_usd"] else "unlimited"
             pct = f"  ·  {eu['pct']:.0f}%" if eu["pct"] is not None else ""
             print(f"  {fmt_cost(eu['used_usd'])} / {lim} this month{pct}")
+        elif eu["pct"] is not None:
+            print(f"  {eu['pct']:.0f}% of monthly limit")
         else:
             print("  on")
 
@@ -616,6 +730,7 @@ def _print_text(r: dict) -> None:
             ("limit", fmt_tokens(w["limit"]) if w["limit"] else None),
             ("plan", w["plan"]),
             ("resets_at", w["resets_at"]),
+            ("source", w.get("source")),
         )
     )
 
@@ -630,8 +745,11 @@ def _print_text(r: dict) -> None:
             ("used_raw", wk["used"]),
             ("limit", fmt_tokens(wk["limit"]) if wk["limit"] else None),
             ("resets_at", wk["resets_at"]),
+            ("source", wk.get("source")),
         )
     )
+    if wk.get("limits_pct"):
+        print(kv(*((f"{k}_pct", f"{v:.0f}") for k, v in wk["limits_pct"].items())))
     print(kv(("messages", wk["messages"]), ("sessions", wk["sessions"]), ("api_cost_usd", wk.get("api_cost_usd"))))
 
     eu = r.get("extra_usage")
@@ -644,6 +762,7 @@ def _print_text(r: dict) -> None:
                 ("used_usd", eu["used_usd"]),
                 ("limit_usd", eu["limit_usd"]),
                 ("pct", eu["pct"]),
+                ("source", eu.get("source")),
             )
         )
 
@@ -723,7 +842,7 @@ def main() -> None:
     daily = collect_usage()
     win_tokens = collect_5h_window()
     live_ctxs = collect_live_contexts()
-    rl = load_rate_limits()
+    rl = load_combined_rate_limits()
 
     report = _build_report(daily, win_tokens, live_ctxs, rl)
 

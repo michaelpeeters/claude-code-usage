@@ -292,3 +292,124 @@ def test_collect_usage_accumulates_week_cost(tmp_path):
     assert daily[today]["cost"] == pytest.approx(3.0)
     total_cost = sum(v.get("cost", 0.0) for v in daily.values())
     assert total_cost == pytest.approx(3.0)
+
+
+# ---------------------------------------------------------------------------
+# Claude Desktop plan-usage samples
+# ---------------------------------------------------------------------------
+
+
+def _write_history(path: Path, samples: list[dict]) -> None:
+    path.write_text(json.dumps({"version": 2, "samples": samples}))
+
+
+def test_load_desktop_usage_takes_newest_fresh_sample(tmp_path):
+    import time
+
+    from claude_usage import load_desktop_usage
+
+    hist = tmp_path / "plan-usage-history.json"
+    now_ms = time.time() * 1000
+    _write_history(
+        hist,
+        [
+            {"t": now_ms - 600_000, "org": "a", "u": {"fh": 5, "sd": 20}},
+            {"t": now_ms - 60_000, "org": "a", "u": {"fh": 9, "sd": 21, "so": 4}},
+        ],
+    )
+    with patch("claude_usage.DESKTOP_USAGE_HISTORY", hist):
+        d = load_desktop_usage()
+    assert d["fh"] == 9 and d["sd"] == 21 and d["so"] == 4
+
+
+@pytest.mark.parametrize(
+    "content",
+    [None, "not json", '{"version": 2, "samples": []}', '{"version": 9}'],
+)
+def test_load_desktop_usage_missing_or_bad_file(tmp_path, content):
+    from claude_usage import load_desktop_usage
+
+    hist = tmp_path / "plan-usage-history.json"
+    if content is not None:
+        hist.write_text(content)
+    with patch("claude_usage.DESKTOP_USAGE_HISTORY", hist):
+        assert load_desktop_usage() == {}
+
+
+def test_load_desktop_usage_ignores_stale_sample(tmp_path):
+    import time
+
+    from claude_usage import DESKTOP_MAX_AGE, load_desktop_usage
+
+    hist = tmp_path / "plan-usage-history.json"
+    _write_history(hist, [{"t": (time.time() - DESKTOP_MAX_AGE - 60) * 1000, "org": "a", "u": {"fh": 9}}])
+    with patch("claude_usage.DESKTOP_USAGE_HISTORY", hist):
+        assert load_desktop_usage() == {}
+
+
+def test_merge_desktop_fills_missing_statusline():
+    import time
+
+    from claude_usage import merge_desktop_usage
+
+    now = time.time()
+    rl = merge_desktop_usage({}, {"t": now, "fh": 12.0, "sd": 30.0, "cw": 7.0, "xu": 40.0}, 0.0)
+    assert rl["five_hour"] == {"used_percentage": 12.0, "source": "desktop"}
+    assert rl["seven_day"]["used_percentage"] == 30.0
+    assert rl["seven_day_cowork"]["used_percentage"] == 7.0
+    assert rl["extra_usage"]["utilization"] == 40.0
+
+
+def test_merge_desktop_newer_sample_keeps_running_reset():
+    import time
+
+    from claude_usage import merge_desktop_usage
+
+    now = time.time()
+    reset = now + 3600  # window started 4h ago
+    rl = {"five_hour": {"used_percentage": 10, "resets_at": reset}}
+    out = merge_desktop_usage(rl, {"t": now, "fh": 15.0}, now - 600)
+    assert out["five_hour"] == {"used_percentage": 15.0, "source": "desktop", "resets_at": reset}
+
+
+def test_merge_desktop_older_sample_loses_to_statusline():
+    import time
+
+    from claude_usage import merge_desktop_usage
+
+    now = time.time()
+    rl = {"five_hour": {"used_percentage": 10, "resets_at": now + 3600}}
+    out = merge_desktop_usage(rl, {"t": now - 600, "fh": 99.0}, now)
+    assert out["five_hour"]["used_percentage"] == 10
+
+
+def test_merge_desktop_sample_after_reset_drops_reset_time():
+    import time
+
+    from claude_usage import merge_desktop_usage
+
+    now = time.time()
+    rl = {"five_hour": {"used_percentage": 80, "resets_at": now - 1200}}  # stale window
+    out = merge_desktop_usage(rl, {"t": now - 60, "fh": 3.0}, now - 7200)
+    assert out["five_hour"] == {"used_percentage": 3.0, "source": "desktop"}
+
+
+def test_merge_desktop_sample_from_expired_window_ignored():
+    import time
+
+    from claude_usage import merge_desktop_usage
+
+    now = time.time()
+    rl = {"five_hour": {"used_percentage": 80, "resets_at": now - 600}}
+    out = merge_desktop_usage(rl, {"t": now - 1200, "fh": 79.0}, now - 7200)
+    assert out["five_hour"]["used_percentage"] == 80
+
+
+def test_merge_desktop_does_not_override_statusline_extra_usage():
+    import time
+
+    from claude_usage import merge_desktop_usage
+
+    eu = {"is_enabled": True, "used_credits": 500, "monthly_limit": 2000, "utilization": 25}
+    out = merge_desktop_usage({"extra_usage": eu}, {"t": time.time(), "xu": 30.0}, 0.0)
+    assert out["extra_usage"] == eu

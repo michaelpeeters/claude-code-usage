@@ -139,6 +139,101 @@ def load_rate_limits() -> dict:
         return {}
 
 
+# ---------------------------------------------------------------------------
+# Claude Desktop plan-usage samples — Desktop polls the server's plan-usage
+# endpoint while it runs and appends utilization % to plan-usage-history.json
+# (one sample per ≤4.5 min, 30-day retention). These are account-wide figures
+# (chat + Cowork + Code), so they complement the statusline cache. Undocumented
+# internal format: any surprise just means "no Desktop data".
+# ---------------------------------------------------------------------------
+
+
+def _desktop_config_dir() -> Path:
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Claude"
+    if sys.platform == "win32":
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming") / "Claude"
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "Claude"
+
+
+DESKTOP_USAGE_HISTORY = _desktop_config_dir() / "plan-usage-history.json"
+DESKTOP_MAX_AGE = 3600  # seconds; older samples are ignored (Desktop probably closed)
+# Desktop's short keys → statusline-style rate_limits keys
+_DESKTOP_KEYS = {
+    "fh": "five_hour",
+    "sd": "seven_day",
+    "so": "seven_day_opus",
+    "sn": "seven_day_sonnet",
+    "cw": "seven_day_cowork",
+}
+_WINDOW_SECS = {"five_hour": 5 * 3600, "seven_day": 7 * 86400}
+
+
+def load_desktop_usage() -> dict:
+    """Newest Claude Desktop sample as {"t": epoch_s, "<short key>": pct, ...}; {} if none/stale."""
+    try:
+        samples = json.loads(DESKTOP_USAGE_HISTORY.read_text())["samples"]
+        latest = max(samples, key=lambda s: s["t"])
+        t = latest["t"] / 1000
+        if time.time() - t > DESKTOP_MAX_AGE:
+            return {}
+        pcts = {k: float(v) for k, v in latest["u"].items() if isinstance(v, (int, float))}
+        return {"t": t, **pcts} if pcts else {}
+    except Exception:
+        return {}
+
+
+def merge_desktop_usage(rl: dict, desktop: dict, rl_mtime: float) -> dict:
+    """Overlay a Desktop sample onto statusline rate limits (marked source="desktop").
+
+    5h/7d: Desktop wins when its sample is newer than the statusline cache. Desktop
+    doesn't record reset times, so the statusline's resets_at is kept only when the
+    sample falls inside that same, still-running window. Per-model/Cowork weekly %
+    and extra-usage % only exist in Desktop data and are added when missing.
+    """
+    if not desktop:
+        return rl
+    rl = dict(rl)
+    t = desktop["t"]
+    now = time.time()
+    for short, key in _DESKTOP_KEYS.items():
+        if short not in desktop:
+            continue
+        cur = rl.get(key) or {}
+        entry = {"used_percentage": desktop[short], "source": "desktop"}
+        if key in _WINDOW_SECS:
+            if "used_percentage" in cur and rl_mtime >= t:
+                continue  # statusline is fresher
+            reset = cur.get("resets_at")
+            if reset:
+                if t < reset - _WINDOW_SECS[key]:
+                    continue  # sample predates the window the statusline knows about
+                if t < reset:
+                    if reset <= now:
+                        continue  # sample is from a window that has since reset
+                    entry["resets_at"] = reset
+        elif "used_percentage" in cur:
+            continue
+        rl[key] = entry
+    if "xu" in desktop and not rl.get("extra_usage"):
+        rl["extra_usage"] = {"is_enabled": True, "utilization": desktop["xu"], "source": "desktop"}
+    return rl
+
+
+def load_combined_rate_limits() -> dict:
+    """Statusline rate limits with the latest Claude Desktop sample merged in."""
+    rl = load_rate_limits()
+    try:
+        rl_mtime = RATE_LIMITS_CACHE.stat().st_mtime
+    except OSError:
+        rl_mtime = 0.0
+    return merge_desktop_usage(rl, load_desktop_usage(), rl_mtime)
+
+
+def _rl_source(entry: dict) -> str:
+    return "via Desktop" if entry.get("source") == "desktop" else "real data"
+
+
 def collect_5h_window() -> int:
     """Sum real tokens (input+output) from the last 5 hours across all JSONL files."""
     now = datetime.now(timezone.utc)
@@ -802,6 +897,13 @@ class UsageWindow(QWidget):
         self.week_detail_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
         usage_lay.addWidget(self.week_detail_lbl)
 
+        self.week_split_lbl = QLabel("")
+        self.week_split_lbl.setStyleSheet(f"color: {FG2}; font-size: 10px;")
+        self.week_split_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.week_split_lbl.setToolTip("Separate 7-day limits (account-wide, recorded by Claude Desktop)")
+        self.week_split_lbl.setVisible(False)
+        usage_lay.addWidget(self.week_split_lbl)
+
         self.chart = MiniBarChart()
         usage_lay.addWidget(self.chart)
 
@@ -827,7 +929,7 @@ class UsageWindow(QWidget):
 
         self.extra_lbl = QLabel("")
         self.extra_lbl.setStyleSheet(f"color: {FG2}; font-size: 10px;")
-        self.extra_lbl.setToolTip("Extra-usage credits reported by Claude Code (via statusline cache)")
+        self.extra_lbl.setToolTip("Extra-usage credits reported by Claude Code or Claude Desktop")
         self.extra_lbl.setVisible(False)
         usage_lay.addWidget(self.extra_lbl)
 
@@ -898,7 +1000,7 @@ class UsageWindow(QWidget):
             try:
                 daily = collect_usage()
                 win_tokens = collect_5h_window()
-                rl = load_rate_limits()
+                rl = load_combined_rate_limits()
                 self._live_contexts = collect_live_contexts()
                 self._refresh_done.emit(daily, win_tokens, rl)
             except BaseException as e:
@@ -926,7 +1028,9 @@ class UsageWindow(QWidget):
         if fh and "used_percentage" in fh and not fh_stale:
             fh_pct = fh["used_percentage"]
             reset_ts = fh.get("resets_at")
-            reset_str = datetime.fromtimestamp(reset_ts).strftime("resets %H:%M") if reset_ts else "real data"
+            reset_str = (
+                datetime.fromtimestamp(reset_ts).strftime("resets %H:%M") if reset_ts else _rl_source(fh)
+            )
             # Derive the real ceiling from (tokens / pct) when we have both; otherwise fall back
             if fh_pct > 0 and win_tokens > 0:
                 implied_limit = int(win_tokens / (fh_pct / 100))
@@ -987,7 +1091,7 @@ class UsageWindow(QWidget):
             sd_pct = sd["used_percentage"]
             reset_ts = sd.get("resets_at")
             reset_str = (
-                datetime.fromtimestamp(reset_ts).strftime("resets %a %H:%M") if reset_ts else "real data"
+                datetime.fromtimestamp(reset_ts).strftime("resets %a %H:%M") if reset_ts else _rl_source(sd)
             )
             if sd_pct > 0 and w_tokens > 0:
                 implied_week_limit = int(w_tokens / (sd_pct / 100))
@@ -1005,6 +1109,19 @@ class UsageWindow(QWidget):
             self.week_pct_lbl.setText(f"{w_pct}%")
             self.week_detail_lbl.setText(f"{fmt_tokens(w_tokens)} / ~{fmt_tokens(WEEK_ESTIMATE)} est.")
         self.chart.set_data(chart_data)
+
+        # Per-model / Cowork weekly limits — only Claude Desktop records these.
+        split = [
+            f"{name} {rl[key]['used_percentage']:.0f}%"
+            for key, name in (
+                ("seven_day_opus", "Opus"),
+                ("seven_day_sonnet", "Sonnet"),
+                ("seven_day_cowork", "Cowork"),
+            )
+            if "used_percentage" in rl.get(key, {})
+        ]
+        self.week_split_lbl.setText(" · ".join(split))
+        self.week_split_lbl.setVisible(bool(split))
 
         # API-rate cost equivalent (what extra usage would bill past plan limits)
         if w_cost > 0:
@@ -1025,6 +1142,8 @@ class UsageWindow(QWidget):
                 if used_c is not None:
                     lim_str = f" / {fmt_cost(lim_c / 100)}" if lim_c else " / unlimited"
                     txt = f"Extra usage: {fmt_cost(used_c / 100)}{lim_str}"
+                elif util is not None:
+                    txt = f"Extra usage: {util:.0f}%"
                 else:
                     txt = "Extra usage: on"
                 if util is not None and lim_c:

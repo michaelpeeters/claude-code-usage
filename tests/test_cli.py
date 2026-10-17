@@ -497,3 +497,25 @@ def test_statusline_malformed_stdin_does_not_crash(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "Claude" in captured.out
     assert not cache.exists()
+
+
+def test_report_shows_desktop_source_and_limits(tmp_path, capsys):
+    import time
+
+    from claude_usage_cli import main
+
+    hist = tmp_path / "plan-usage-history.json"
+    sample = {"t": time.time() * 1000, "org": "a", "u": {"fh": 12, "sd": 30, "so": 8, "xu": 40}}
+    hist.write_text(json.dumps({"version": 2, "samples": [sample]}))
+    with (
+        patch("claude_usage_cli.PROJECTS_DIR", tmp_path),
+        patch("claude_usage_cli.STATS_CACHE", tmp_path / "none.json"),
+        patch("claude_usage_cli.RATE_LIMITS_CACHE", tmp_path / "none-rl.json"),
+        patch("claude_usage_cli.DESKTOP_USAGE_HISTORY", hist),
+        patch("sys.argv", ["claude_usage_cli.py", "--json"]),
+    ):
+        main()
+    r = json.loads(capsys.readouterr().out)
+    assert r["window_5h"]["pct"] == 12 and r["window_5h"]["source"] == "desktop"
+    assert r["week_7d"]["estimated"] is False and r["week_7d"]["limits_pct"] == {"opus": 8}
+    assert r["extra_usage"]["pct"] == 40 and r["extra_usage"]["source"] == "desktop"
