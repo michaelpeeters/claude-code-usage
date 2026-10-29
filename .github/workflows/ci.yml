@@ -16,7 +16,8 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install lint tools
-        run: pip install ruff mypy PyQt6
+        # PyQt6 6.12.0 ships stubs mypy can't parse (`*args, /` in QtGui.pyi); unpin once fixed upstream
+        run: pip install ruff mypy "PyQt6<6.12"
       - name: ruff check
         run: ruff check claude_usage.py tests/
       - name: ruff format
