@@ -216,11 +216,11 @@ def test_trigger_update_strips_ld_library_path(qapp, tmp_path):
         patch("claude_usage.subprocess.run", side_effect=fake_run),
     ):
         win = UsageWindow()
+        _wait_for_refresh(win, qapp)  # drain initial refresh so no late signal hits a closed window
         win._trigger_update()
-        # Give the thread a moment to run
-        import time
-
-        time.sleep(0.5)
+        deadline = time.monotonic() + 3.0
+        while not captured_envs and time.monotonic() < deadline:
+            time.sleep(0.02)
 
     assert captured_envs, "subprocess.run was never called"
     assert "LD_LIBRARY_PATH" not in captured_envs[0], "LD_LIBRARY_PATH must be stripped from curl env"
@@ -245,6 +245,7 @@ def test_trigger_update_shows_error_on_curl_failure(qapp, tmp_path):
         patch("claude_usage.subprocess.run", side_effect=fake_run),
     ):
         win = UsageWindow()
+        _wait_for_refresh(win, qapp)  # drain initial refresh so no late signal hits a closed window
         win._trigger_update()
         deadline = time.time() + 3.0
         while win._update_btn.isEnabled() is False and time.time() < deadline:
